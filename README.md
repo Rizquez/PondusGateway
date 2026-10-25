@@ -1,4 +1,4 @@
-# ServiceProtocol - v0.1.0
+# ServiceGateway - v0.1.0
 
 ## 🚧 Roadmap
 
@@ -22,6 +22,36 @@
 | v0.8.0    | Advanced planning algorithms               |
 | v0.9.0    | Observability and external metrics         |
 | v1.0.0    | First stable version as a reusable library |
+
+## 📂 Project structure
+
+```
+service-gateway
+├── internal
+│   ├── admission
+│   │   ├── controller_stress_test.go
+│   │   ├── controller_test.go
+│   │   └── controller.go
+│   ├── budget
+│   │   ├── budget_edge_test.go
+│   │   ├── budget_test.go
+│   │   └── budget.go
+│   ├── operation
+│   │   ├── lifecycle_test.go
+│   │   ├── lifecycle.go
+│   │   ├── operation_test.go
+│   │   ├── operation.go
+│   │   ├── state_test.go
+│   │   └── state.go
+│   └── settings
+│       ├── limits_test.go
+│       └── limits.go
+├── .gitignore
+├── go.mod
+├── LICENSE
+├── Makefile
+└── README.md
+```
 
 ## 🔒 License
 
