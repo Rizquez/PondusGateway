@@ -1,7 +1,5 @@
 package operation
 
-import "fmt"
-
 type State string
 
 const (
@@ -12,6 +10,11 @@ const (
 	StateCancelled State = "cancelled"
 )
 
+/*
+From the Pending status, it can start or cancel
+From the Running status, it can complete, fail or cancel
+Final statuses do not allow for new transitions
+*/
 func (state State) CanTransitionTo(next State) bool {
 	switch state {
 	case StatePending:
@@ -23,28 +26,4 @@ func (state State) CanTransitionTo(next State) bool {
 	default:
 		return false
 	}
-}
-
-type Lifecycle struct {
-	state State
-}
-
-func NewLifecycle() *Lifecycle {
-	return &Lifecycle{state: StatePending}
-}
-
-func (lifecycle *Lifecycle) State() State {
-	return lifecycle.state
-}
-
-func (lifecycle *Lifecycle) TransitionTo(next State) error {
-	if !lifecycle.state.CanTransitionTo(next) {
-		return fmt.Errorf(
-			"invalid operation state transition: %s -> %s",
-			lifecycle.state, next,
-		)
-	}
-
-	lifecycle.state = next
-	return nil
 }

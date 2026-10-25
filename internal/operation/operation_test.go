@@ -5,9 +5,9 @@ import (
 	"testing"
 )
 
-func TestOperationValidate(test *testing.T) {
+func TestOperationValidate(t *testing.T) {
 	valid := Operation{
-		ID:       "op-1",
+		ID:       "operation-1",
 		ClientID: "client-1",
 		Type:     "compute",
 		Cost:     20,
@@ -15,7 +15,7 @@ func TestOperationValidate(test *testing.T) {
 
 	tests := []struct {
 		name      string
-		op        Operation
+		operation Operation
 		wantError bool
 	}{
 		{"valid", valid, false},
@@ -27,49 +27,49 @@ func TestOperationValidate(test *testing.T) {
 		}, true},
 
 		{"blank client", Operation{
-			ID:       "op-1",
+			ID:       "operation-1",
 			ClientID: "   ",
 			Type:     "compute",
 			Cost:     20,
 		}, true},
 
 		{"empty type", Operation{
-			ID:       "op-1",
+			ID:       "operation-1",
 			ClientID: "client-1",
 			Cost:     20,
 		}, true},
 
 		{"zero cost", Operation{
-			ID:       "op-1",
+			ID:       "operation-1",
 			ClientID: "client-1",
 			Type:     "compute",
 		}, true},
 	}
 
-	for _, tt := range tests {
-		test.Run(tt.name, func(test *testing.T) {
-			err := tt.op.Validate()
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := test.operation.Validate()
 
-			if (err != nil) != tt.wantError {
-				test.Fatalf(
+			if (err != nil) != test.wantError {
+				t.Fatalf(
 					"Validate() err=%v, wantError=%v",
 					err,
-					tt.wantError,
+					test.wantError,
 				)
 			}
 		})
 	}
 }
 
-func TestOperationValidateEdgeCases(test *testing.T) {
+func TestOperationValidateEdgeCases(t *testing.T) {
 	tests := []struct {
 		name      string
-		op        Operation
+		operation Operation
 		wantError bool
 	}{
 		{
 			name: "whitespace ID",
-			op: Operation{
+			operation: Operation{
 				ID:       " \t\n",
 				ClientID: "client-1",
 				Type:     "compute",
@@ -79,8 +79,8 @@ func TestOperationValidateEdgeCases(test *testing.T) {
 		},
 		{
 			name: "whitespace type",
-			op: Operation{
-				ID:       "op-1",
+			operation: Operation{
+				ID:       "operation-1",
 				ClientID: "client-1",
 				Type:     " \t",
 				Cost:     1,
@@ -89,8 +89,8 @@ func TestOperationValidateEdgeCases(test *testing.T) {
 		},
 		{
 			name: "minimum positive cost",
-			op: Operation{
-				ID:       "op-1",
+			operation: Operation{
+				ID:       "operation-1",
 				ClientID: "client-1",
 				Type:     "compute",
 				Cost:     1,
@@ -99,8 +99,8 @@ func TestOperationValidateEdgeCases(test *testing.T) {
 		},
 		{
 			name: "maximum uint64 cost",
-			op: Operation{
-				ID:       "op-1",
+			operation: Operation{
+				ID:       "operation-1",
 				ClientID: "client-1",
 				Type:     "compute",
 				Cost:     math.MaxUint64,
@@ -109,14 +109,14 @@ func TestOperationValidateEdgeCases(test *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		test.Run(tt.name, func(t *testing.T) {
-			err := tt.op.Validate()
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := test.operation.Validate()
 
-			if (err != nil) != tt.wantError {
+			if (err != nil) != test.wantError {
 				t.Fatalf(
 					"Validate() error = %v, wantError = %v",
-					err, tt.wantError,
+					err, test.wantError,
 				)
 			}
 		})
