@@ -1,3 +1,3 @@
-module github.com/Rizquez/ServiceProtocol
+module service-gateway
 
 go 1.27.3
