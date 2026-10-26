@@ -1,4 +1,4 @@
-# PondusGateway - v0.2.0
+# PondusGateway - v0.3.0
 
 ## 🚧 Roadmap
 
