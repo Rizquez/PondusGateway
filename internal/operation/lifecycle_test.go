@@ -65,9 +65,7 @@ func TestLifecycleTerminalStates(t *testing.T) {
 				}
 
 				if life.State() != terminal {
-					t.Fatalf(
-						"state changed after invalid transition",
-					)
+					t.Fatalf("state changed after invalid transition")
 				}
 			}
 		})

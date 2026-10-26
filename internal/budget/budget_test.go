@@ -23,18 +23,27 @@ func TestManager(t *testing.T) {
 
 	// Only 5 units left
 	if err := manager.Reserve("c", 8); !errors.Is(err, ErrInsufficient) {
-		t.Fatalf("want insufficient budget: %v", err)
+		t.Fatalf(
+			"want insufficient budget: %v",
+			err,
+		)
 	}
 
 	// It cannot make two reservations with the same ID
 	if err := manager.Reserve("a", 1); !errors.Is(err, ErrDuplicate) {
-		t.Fatalf("want duplicate reservation: %v", err)
+		t.Fatalf(
+			"want duplicate reservation: %v",
+			err,
+		)
 	}
 
 	used, available := manager.Snapshot()
 
 	if used != 25 || available != 5 {
-		t.Fatalf("used=%d available=%d", used, available)
+		t.Fatalf(
+			"used=%d available=%d",
+			used, available,
+		)
 	}
 
 	if err := manager.Release("a"); err != nil {
@@ -43,13 +52,19 @@ func TestManager(t *testing.T) {
 
 	// A released reservation cannot be released again
 	if err := manager.Release("a"); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("want reservation not found: %v", err)
+		t.Fatalf(
+			"want reservation not found: %v",
+			err,
+		)
 	}
 
 	used, available = manager.Snapshot()
 
 	if used != 15 || available != 15 {
-		t.Fatalf("used=%d available=%d", used, available)
+		t.Fatalf(
+			"used=%d available=%d",
+			used, available,
+		)
 	}
 }
 

@@ -53,8 +53,7 @@ func TestOperationValidate(t *testing.T) {
 			if (err != nil) != test.wantError {
 				t.Fatalf(
 					"Validate() err=%v, wantError=%v",
-					err,
-					test.wantError,
+					err, test.wantError,
 				)
 			}
 		})

@@ -17,8 +17,7 @@ func assertBudget(t *testing.T, manager *Manager, wantUsed, wantAvailable uint64
 	if used != wantUsed || available != wantAvailable {
 		t.Fatalf(
 			"budget: used=%d, available=%d; want used=%d, available=%d",
-			used, available,
-			wantUsed, wantAvailable,
+			used, available, wantUsed, wantAvailable,
 		)
 	}
 }
@@ -36,7 +35,10 @@ func TestMaximumBudget(t *testing.T) {
 
 	// Only one unit is left
 	if err := manager.Reserve("b", 2); !errors.Is(err, ErrInsufficient) {
-		t.Fatalf("expected insufficient budget, got %v", err)
+		t.Fatalf(
+			"expected insufficient budget, got %v",
+			err,
+		)
 	}
 
 	if err := manager.Reserve("b", 1); err != nil {
@@ -110,7 +112,10 @@ func TestConcurrentReleaseOnlyOnce(t *testing.T) {
 				// Another goroutine has already released the reservation
 
 			default:
-				t.Errorf("unexpected release error: %v", err)
+				t.Errorf(
+					"unexpected release error: %v",
+					err,
+				)
 			}
 		})
 	}

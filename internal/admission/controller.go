@@ -14,6 +14,7 @@ var (
 	ErrNotActive = errors.New("operation is not active")
 )
 
+// Represents the outcome of an application for admission.
 type Decision string
 
 const (
@@ -22,6 +23,14 @@ const (
 	Rejected Decision = "rejected"
 )
 
+// Manages the acceptance of operations based on the established
+// concurrency, budget, and queue capacity limits.
+//
+// It keeps track of active, pending, and known operations,
+// preventing duplicate acceptances and managing budget reserves.
+//
+// It protects its internal state using a mutex to allow
+// secure access from multiple goroutines.
 type Controller struct {
 	mutex   sync.Mutex
 	limits  settings.Limits
@@ -31,6 +40,13 @@ type Controller struct {
 	known   map[string]struct{}
 }
 
+// Creates an admission controller with the specified configuration limits.
+//
+// Validates the limits and creates a budget manager with the specified maximum
+// capacity.
+//
+// Returns an initialized Controller with no active or pending operations or an
+// error if the configuration or budget initialization fails.
 func New(limits settings.Limits) (*Controller, error) {
 	if err := limits.Validate(); err != nil {
 		return nil, err
@@ -49,6 +65,29 @@ func New(limits settings.Limits) (*Controller, error) {
 	}, nil
 }
 
+// Evaluates a transaction and determines whether it can be executed, placed on
+// hold or rejected.
+//
+// The transaction must satisfy the validation constraints, have an unregistered
+// identifier, and not exceed the maximum budget.
+//
+// A transaction begins immediately when there are no pending transactions,
+// concurrency capacity is available, and sufficient budget is available.
+//
+// If it cannot begin, it is added to the queue provided there is space.
+// Accepted operations are registered to prevent duplicate identifiers.
+//
+// Returns:
+//   - Started if the operation begins immediately.
+//   - Queued if the operation is added to the queue.
+//   - Rejected if the operation cannot be accepted.
+//
+// It also returns an error if validation fails, the identifier is duplicated,
+// the cost exceeds the maximum budget or the reservation fails.
+//
+// Rejection due to lack of space in the queue returns Rejected and nil.
+//
+// Rejected operations are not logged in the controller.
 func (controller *Controller) Submit(operation operation.Operation) (Decision, error) {
 	if err := operation.Validate(); err != nil {
 		return Rejected, err
@@ -62,9 +101,7 @@ func (controller *Controller) Submit(operation operation.Operation) (Decision, e
 	}
 
 	if operation.Cost > controller.limits.MaxBudget {
-		return Rejected, fmt.Errorf(
-			"operation cost exceeds maximum budget",
-		)
+		return Rejected, fmt.Errorf("operation cost exceeds maximum budget")
 	}
 
 	_, available := controller.budget.Snapshot()
@@ -91,7 +128,22 @@ func (controller *Controller) Submit(operation operation.Operation) (Decision, e
 	return Queued, nil
 }
 
-// Finish releases a reservation and processes pending transactions using the FIFO method
+// Terminates an active operation, releases its budget reservation and
+// attempts to promote pending operations to execution.
+//
+// Pending operations are processed in FIFO order.
+//
+// Each promotion requires sufficient concurrency and budget.
+//
+// If the first pending operation does not have sufficient budget,
+// processing stops without evaluating subsequent operations.
+//
+// Returns the operations promoted during the call, in the order they were
+// admitted, or an error if the specified operation is not active or if a
+// failure occurs while releasing or reserving budget.
+//
+// If a promotion fails, it returns the operations promoted up to that point
+// along with the corresponding error.
 func (controller *Controller) Finish(id string) ([]operation.Operation, error) {
 	controller.mutex.Lock()
 	defer controller.mutex.Unlock()
@@ -134,6 +186,15 @@ func (controller *Controller) Finish(id string) ([]operation.Operation, error) {
 	return promoted, nil
 }
 
+// Takes a snapshot of the controller's current state.
+//
+// Returns the number of active operations, the number of operations pending
+// in the queue and the total amount of reserved budget.
+//
+// The query is performed with mutual exclusion to ensure the consistency of
+// the returned values.
+//
+// Does not modify the controller's state.
 func (controller *Controller) Snapshot() (active, queued int, used uint64) {
 	controller.mutex.Lock()
 	defer controller.mutex.Unlock()

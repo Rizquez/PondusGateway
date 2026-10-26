@@ -1,5 +1,6 @@
 package operation
 
+// Represents the status of an operation throughout its lifecycle.
 type State string
 
 const (
@@ -10,11 +11,19 @@ const (
 	StateCancelled State = "cancelled"
 )
 
-/*
-From the Pending status, it can start or cancel
-From the Running status, it can complete, fail or cancel
-Final statuses do not allow for new transitions
-*/
+// Checks whether a transition from the current state
+// to the specified state is allowed.
+//
+// Allowed transitions are:
+//   - Pending: Running or Cancelled.
+//   - Running: Completed, Failed, or Cancelled.
+//
+// The Completed, Failed and Cancelled states are final and do not
+// allow new transitions.
+//
+// Returns true if the transition is allowed or false otherwise.
+//
+// Does not modify the current state.
 func (state State) CanTransitionTo(next State) bool {
 	switch state {
 	case StatePending:

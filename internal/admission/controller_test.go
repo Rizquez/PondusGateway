@@ -24,6 +24,7 @@ func TestAdmission(t *testing.T) {
 		MaxBudget:     10,
 		MaxQueueSize:  2,
 	})
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,15 +44,19 @@ func TestAdmission(t *testing.T) {
 	for _, test := range tests {
 		got, err := controller.Submit(testOperation(test.id, test.cost))
 		if err != nil || got != test.want {
-			t.Fatalf("%s: got %s, err %v", test.id, got, err)
+			t.Fatalf(
+				"%s: got %s, err %v",
+				test.id, got, err,
+			)
 		}
 	}
 
 	active, queued, used := controller.Snapshot()
-
 	if active != 2 || queued != 2 || used != 10 {
-		t.Fatalf("unexpected snapshot: %d %d %d",
-			active, queued, used)
+		t.Fatalf(
+			"unexpected snapshot: %d %d %d",
+			active, queued, used,
+		)
 	}
 
 	promoted, err := controller.Finish("a")
@@ -60,13 +65,19 @@ func TestAdmission(t *testing.T) {
 	}
 
 	if len(promoted) != 1 || promoted[0].ID != "controller" {
-		t.Fatalf("unexpected promoted operations: %+v", promoted)
+		t.Fatalf(
+			"unexpected promoted operations: %+v",
+			promoted,
+		)
 	}
 
 	active, queued, used = controller.Snapshot()
 
 	if active != 2 || queued != 1 || used != 7 {
-		t.Fatalf("unexpected snapshot: %d %d %d", active, queued, used)
+		t.Fatalf(
+			"unexpected snapshot: %d %d %d",
+			active, queued, used,
+		)
 	}
 }
 
@@ -76,6 +87,7 @@ func TestAdmissionErrors(t *testing.T) {
 		MaxBudget:     3,
 		MaxQueueSize:  0,
 	})
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,8 +142,10 @@ func TestConcurrentAdmission(t *testing.T) {
 	wg.Wait()
 
 	active, queued, used := controller.Snapshot()
-
 	if active != 5 || queued != 10 || used != 5 {
-		t.Fatalf("unexpected snapshot: %d %d %d", active, queued, used)
+		t.Fatalf(
+			"unexpected snapshot: %d %d %d",
+			active, queued, used,
+		)
 	}
 }
