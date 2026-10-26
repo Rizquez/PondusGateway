@@ -19,7 +19,7 @@ func TestStarvationGuard(t *testing.T) {
 		{ID: "small3", Cost: 1},
 	}
 
-	// First pass.
+	// First pass
 	if got := guard.Next(pending, 4); got != 1 {
 		t.Fatalf(
 			"first selection = %d, want 1",
