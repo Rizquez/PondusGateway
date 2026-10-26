@@ -42,16 +42,37 @@ type Controller struct {
 	known    map[string]struct{}
 }
 
-// Creates an admission controller with the specified configuration limits.
+// Creates a queue controller using the FIFO scheduler as the
+// default strategy for selecting pending operations.
 //
-// Validates the limits and creates a budget manager with the specified maximum
-// capacity.
+// Delegates the initialization and validation of the controller
+// to NewWithSelector.
 //
-// Returns an initialized Controller with no active or pending operations or an
-// error if the configuration or budget initialization fails.
+// Returns the initialized controller or an error if the configuration
+// provided is invalid.
 func New(limits settings.Limits) (*Controller, error) {
+	return NewWithSelector(limits, scheduler.FIFO{})
+}
+
+// Creates an admission controller with the specified configuration
+// limits and scheduler.
+//
+// It validates the specified limits and checks that the scheduler
+// is not nil before initializing the budget manager.
+//
+// The controller is initialized with no active or pending operations,
+// with the full budget available and empty records.
+//
+// Returns a pointer to the created controller or an error if the limits
+// are invalid, the scheduler is nil, or the budget manager initialization
+// fails.
+func NewWithSelector(limits settings.Limits, selector scheduler.Selector) (*Controller, error) {
 	if err := limits.Validate(); err != nil {
 		return nil, err
+	}
+
+	if selector == nil {
+		return nil, errors.New("scheduler cannot be nil")
 	}
 
 	max, err := budget.New(limits.MaxBudget)
@@ -62,8 +83,9 @@ func New(limits settings.Limits) (*Controller, error) {
 	return &Controller{
 		limits:   limits,
 		budget:   max,
-		selector: scheduler.FIFO{},
+		selector: selector,
 		active:   make(map[string]operation.Operation),
+		pending:  nil,
 		known:    make(map[string]struct{}),
 	}, nil
 }
