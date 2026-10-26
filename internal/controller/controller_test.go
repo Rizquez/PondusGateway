@@ -1,16 +1,17 @@
-package admission
+package controller
 
 import (
 	"errors"
 	"fmt"
-	"pondus-gateway/internal/operation"
-	"pondus-gateway/internal/settings"
+	"pondus-gateway/internal/core"
+	"pondus-gateway/internal/limits"
+	"pondus-gateway/internal/scheduler"
 	"sync"
 	"testing"
 )
 
-func testOperation(id string, cost uint64) operation.Operation {
-	return operation.Operation{
+func testOperation(id string, cost uint64) core.Operation {
+	return core.Operation{
 		ID:       id,
 		ClientID: "client-1",
 		Type:     "compute",
@@ -19,9 +20,9 @@ func testOperation(id string, cost uint64) operation.Operation {
 }
 
 func TestAdmission(t *testing.T) {
-	controller, err := New(settings.Limits{
+	controller, err := New(limits.Limits{
 		MaxConcurrent: 2,
-		MaxBudget:     10,
+		MaxCapacity:   10,
 		MaxQueueSize:  2,
 	})
 
@@ -82,9 +83,9 @@ func TestAdmission(t *testing.T) {
 }
 
 func TestAdmissionErrors(t *testing.T) {
-	controller, err := New(settings.Limits{
+	controller, err := New(limits.Limits{
 		MaxConcurrent: 1,
-		MaxBudget:     3,
+		MaxCapacity:   3,
 		MaxQueueSize:  0,
 	})
 
@@ -114,9 +115,9 @@ func TestAdmissionErrors(t *testing.T) {
 }
 
 func TestConcurrentAdmission(t *testing.T) {
-	controller, err := New(settings.Limits{
+	controller, err := New(limits.Limits{
 		MaxConcurrent: 5,
-		MaxBudget:     5,
+		MaxCapacity:   5,
 		MaxQueueSize:  10,
 	})
 
@@ -145,6 +146,76 @@ func TestConcurrentAdmission(t *testing.T) {
 	if active != 5 || queued != 10 || used != 5 {
 		t.Fatalf(
 			"unexpected snapshot: %d %d %d",
+			active, queued, used,
+		)
+	}
+}
+
+func TestCapacityFitAdmission(t *testing.T) {
+	controller, err := NewWithSelector(limits.Limits{
+		MaxConcurrent: 3,
+		MaxCapacity:   10,
+		MaxQueueSize:  4,
+	}, scheduler.CapacityFit{})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		id   string
+		cost uint64
+		want Decision
+	}{
+		{"a", 6, Started},
+		{"b", 4, Started},
+		{"big", 8, Queued},
+		{"small", 1, Queued},
+		{"tiny", 2, Queued},
+	}
+
+	for _, test := range tests {
+		operation := core.Operation{
+			ID:       test.id,
+			ClientID: "client-1",
+			Type:     "compute",
+			Cost:     test.cost,
+		}
+
+		decision, err := controller.Submit(operation)
+		if err != nil || decision != test.want {
+			t.Fatalf(
+				"%s: got %s, err=%v, want=%s",
+				test.id, decision, err, test.want,
+			)
+		}
+	}
+
+	// When B is released, 4 units remain available.
+	// Big needs 8, so CapacityFit skips it.
+	promoted, err := controller.Finish("b")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(promoted) != 2 {
+		t.Fatalf(
+			"promoted %d operations, want 2",
+			len(promoted),
+		)
+	}
+
+	if promoted[0].ID != "small" || promoted[1].ID != "tiny" {
+		t.Fatalf(
+			"unexpected promotion order: %+v",
+			promoted,
+		)
+	}
+
+	active, queued, used := controller.Snapshot()
+	if active != 3 || queued != 1 || used != 9 {
+		t.Fatalf(
+			"snapshot: active=%d queued=%d used=%d",
 			active, queued, used,
 		)
 	}

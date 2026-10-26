@@ -1,12 +1,12 @@
-package admission
+package controller
 
 import (
 	"errors"
 	"fmt"
-	"pondus-gateway/internal/budget"
-	"pondus-gateway/internal/operation"
+	"pondus-gateway/internal/capacity"
+	"pondus-gateway/internal/core"
+	"pondus-gateway/internal/limits"
 	"pondus-gateway/internal/scheduler"
-	"pondus-gateway/internal/settings"
 	"sync"
 )
 
@@ -25,32 +25,32 @@ const (
 )
 
 // Manages the acceptance of operations based on the established
-// concurrency, budget, and queue capacity limits.
+// concurrency, capacity, and queue capacity limits.
 //
-// It keeps track of active, pending, and known operations,
-// preventing duplicate acceptances and managing budget reserves.
+// It keeps track of active, pending, and known operations, preventing
+// duplicate acceptances and managing capacity reserves.
 //
-// It protects its internal state using a mutex to allow
-// secure access from multiple goroutines.
+// It protects its internal state using a mutex to allow secure access
+// from multiple goroutines.
 type Controller struct {
 	mutex    sync.Mutex
-	limits   settings.Limits
-	budget   *budget.Manager
+	limits   limits.Limits
+	capacity *capacity.Capacity
 	selector scheduler.Selector
-	active   map[string]operation.Operation
-	pending  []operation.Operation
+	active   map[string]core.Operation
+	pending  []core.Operation
 	known    map[string]struct{}
 }
 
-// Creates a queue controller using the FIFO scheduler as the
-// default strategy for selecting pending operations.
+// Creates a queue controller using the FIFO scheduler as the default
+// strategy for selecting pending operations.
 //
 // Delegates the initialization and validation of the controller
 // to NewWithSelector.
 //
 // Returns the initialized controller or an error if the configuration
 // provided is invalid.
-func New(limits settings.Limits) (*Controller, error) {
+func New(limits limits.Limits) (*Controller, error) {
 	return NewWithSelector(limits, scheduler.FIFO{})
 }
 
@@ -58,15 +58,15 @@ func New(limits settings.Limits) (*Controller, error) {
 // limits and scheduler.
 //
 // It validates the specified limits and checks that the scheduler
-// is not nil before initializing the budget manager.
+// is not nil before initializing the capacity manager.
 //
 // The controller is initialized with no active or pending operations,
-// with the full budget available and empty records.
+// with the full capacity available and empty records.
 //
 // Returns a pointer to the created controller or an error if the limits
-// are invalid, the scheduler is nil, or the budget manager initialization
+// are invalid, the scheduler is nil, or the capacity manager initialization
 // fails.
-func NewWithSelector(limits settings.Limits, selector scheduler.Selector) (*Controller, error) {
+func NewWithSelector(limits limits.Limits, selector scheduler.Selector) (*Controller, error) {
 	if err := limits.Validate(); err != nil {
 		return nil, err
 	}
@@ -75,16 +75,16 @@ func NewWithSelector(limits settings.Limits, selector scheduler.Selector) (*Cont
 		return nil, errors.New("scheduler cannot be nil")
 	}
 
-	max, err := budget.New(limits.MaxBudget)
+	max, err := capacity.New(limits.MaxCapacity)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Controller{
 		limits:   limits,
-		budget:   max,
+		capacity: max,
 		selector: selector,
-		active:   make(map[string]operation.Operation),
+		active:   make(map[string]core.Operation),
 		pending:  nil,
 		known:    make(map[string]struct{}),
 	}, nil
@@ -94,10 +94,10 @@ func NewWithSelector(limits settings.Limits, selector scheduler.Selector) (*Cont
 // hold or rejected.
 //
 // The transaction must satisfy the validation constraints, have an unregistered
-// identifier, and not exceed the maximum budget.
+// identifier, and not exceed the maximum capacity.
 //
 // A transaction begins immediately when there are no pending transactions,
-// concurrency capacity is available, and sufficient budget is available.
+// concurrency capacity is available, and sufficient capacity is available.
 //
 // If it cannot begin, it is added to the queue provided there is space.
 // Accepted operations are registered to prevent duplicate identifiers.
@@ -108,12 +108,12 @@ func NewWithSelector(limits settings.Limits, selector scheduler.Selector) (*Cont
 //   - Rejected if the operation cannot be accepted.
 //
 // It also returns an error if validation fails, the identifier is duplicated,
-// the cost exceeds the maximum budget or the reservation fails.
+// the cost exceeds the maximum capacity or the reservation fails.
 //
 // Rejection due to lack of space in the queue returns Rejected and nil.
 //
 // Rejected operations are not logged in the controller.
-func (controller *Controller) Submit(operation operation.Operation) (Decision, error) {
+func (controller *Controller) Submit(operation core.Operation) (Decision, error) {
 	if err := operation.Validate(); err != nil {
 		return Rejected, err
 	}
@@ -125,15 +125,15 @@ func (controller *Controller) Submit(operation operation.Operation) (Decision, e
 		return Rejected, ErrDuplicate
 	}
 
-	if operation.Cost > controller.limits.MaxBudget {
-		return Rejected, fmt.Errorf("operation cost exceeds maximum budget")
+	if operation.Cost > controller.limits.MaxCapacity {
+		return Rejected, fmt.Errorf("operation cost exceeds maximum capacity")
 	}
 
-	_, available := controller.budget.Snapshot()
+	_, available := controller.capacity.Snapshot()
 
 	if len(controller.pending) == 0 && len(controller.active) < controller.limits.MaxConcurrent && operation.Cost <= available {
 
-		if err := controller.budget.Reserve(operation.ID, operation.Cost); err != nil {
+		if err := controller.capacity.Reserve(operation.ID, operation.Cost); err != nil {
 			return Rejected, err
 		}
 
@@ -153,11 +153,11 @@ func (controller *Controller) Submit(operation operation.Operation) (Decision, e
 	return Queued, nil
 }
 
-// Finish terminates an active operation, releases its budget allocation and
+// Finish terminates an active operation, releases its capacity allocation and
 // attempts to promote pending operations to execution.
 //
 // The selection of pending operations is delegated to the configured scheduler,
-// which determines the next operation to execute based on the available budget.
+// which determines the next operation to execute based on the available capacity.
 //
 // Promotions continue as long as there are pending operations, concurrency capacity
 // is available, and the scheduler selects an operation.
@@ -165,9 +165,9 @@ func (controller *Controller) Submit(operation operation.Operation) (Decision, e
 // Returns the operations promoted during the call, in the order in which they were
 // selected, or an error if:
 //   - The specified operation is not active.
-//   - Budget release or reservation fails.
+//   - capacity release or reservation fails.
 //   - The planner returns an index outside the allowed range.
-//   - The selected operation exceeds the available budget.
+//   - The selected operation exceeds the available capacity.
 //
 // If the scheduler returns -1, processing ends without an error.
 //
@@ -175,7 +175,7 @@ func (controller *Controller) Submit(operation operation.Operation) (Decision, e
 // point along with the corresponding error.
 //
 // Access to the controller’s state is protected by mutual exclusion.
-func (controller *Controller) Finish(id string) ([]operation.Operation, error) {
+func (controller *Controller) Finish(id string) ([]core.Operation, error) {
 	controller.mutex.Lock()
 	defer controller.mutex.Unlock()
 
@@ -183,19 +183,19 @@ func (controller *Controller) Finish(id string) ([]operation.Operation, error) {
 		return nil, ErrNotActive
 	}
 
-	if err := controller.budget.Release(id); err != nil {
+	if err := controller.capacity.Release(id); err != nil {
 		return nil, err
 	}
 
 	delete(controller.active, id)
 	delete(controller.known, id)
 
-	var promoted []operation.Operation
+	var promoted []core.Operation
 
 	for len(controller.pending) > 0 &&
 		len(controller.active) < controller.limits.MaxConcurrent {
 
-		_, available := controller.budget.Snapshot()
+		_, available := controller.capacity.Snapshot()
 
 		index := controller.selector.Next(
 			controller.pending,
@@ -216,10 +216,10 @@ func (controller *Controller) Finish(id string) ([]operation.Operation, error) {
 		pending := controller.pending[index]
 
 		if pending.Cost > available {
-			return promoted, fmt.Errorf("scheduler selected operation exceeding available budget")
+			return promoted, fmt.Errorf("scheduler selected operation exceeding available capacity")
 		}
 
-		if err := controller.budget.Reserve(pending.ID, pending.Cost); err != nil {
+		if err := controller.capacity.Reserve(pending.ID, pending.Cost); err != nil {
 			return promoted, err
 		}
 
@@ -228,7 +228,7 @@ func (controller *Controller) Finish(id string) ([]operation.Operation, error) {
 			controller.pending[index+1:],
 		)
 
-		controller.pending[len(controller.pending)-1] = operation.Operation{}
+		controller.pending[len(controller.pending)-1] = core.Operation{}
 		controller.pending = controller.pending[:len(controller.pending)-1]
 
 		controller.active[pending.ID] = pending
@@ -241,7 +241,7 @@ func (controller *Controller) Finish(id string) ([]operation.Operation, error) {
 // Takes a snapshot of the controller's current state.
 //
 // Returns the number of active operations, the number of operations pending
-// in the queue and the total amount of reserved budget.
+// in the queue and the total amount of reserved capacity.
 //
 // The query is performed with mutual exclusion to ensure the consistency of
 // the returned values.
@@ -251,7 +251,7 @@ func (controller *Controller) Snapshot() (active, queued int, used uint64) {
 	controller.mutex.Lock()
 	defer controller.mutex.Unlock()
 
-	used, _ = controller.budget.Snapshot()
+	used, _ = controller.capacity.Snapshot()
 
 	return len(controller.active), len(controller.pending), used
 }

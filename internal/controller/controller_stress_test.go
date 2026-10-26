@@ -1,16 +1,16 @@
-package admission
+package controller
 
 import (
 	"errors"
 	"fmt"
-	"pondus-gateway/internal/operation"
-	"pondus-gateway/internal/settings"
+	"pondus-gateway/internal/core"
+	"pondus-gateway/internal/limits"
 	"sync"
 	"testing"
 )
 
-func stressOperation(id string, cost uint64) operation.Operation {
-	return operation.Operation{
+func stressOperation(id string, cost uint64) core.Operation {
+	return core.Operation{
 		ID:       id,
 		ClientID: "client-1",
 		Type:     "compute",
@@ -21,9 +21,9 @@ func stressOperation(id string, cost uint64) operation.Operation {
 func TestSaturationAndConcurrentFinish(t *testing.T) {
 	const total = 50
 
-	controller, err := New(settings.Limits{
+	controller, err := New(limits.Limits{
 		MaxConcurrent: 5,
-		MaxBudget:     5,
+		MaxCapacity:   5,
 		MaxQueueSize:  total - 5,
 	})
 
@@ -74,7 +74,7 @@ func TestSaturationAndConcurrentFinish(t *testing.T) {
 	for len(ids) > 0 {
 		type result struct {
 			id       string
-			promoted []operation.Operation
+			promoted []core.Operation
 			err      error
 		}
 
@@ -147,9 +147,9 @@ func TestSaturationAndConcurrentFinish(t *testing.T) {
 }
 
 func TestFullQueueAndDuplicateRemainUnchanged(t *testing.T) {
-	controller, err := New(settings.Limits{
+	controller, err := New(limits.Limits{
 		MaxConcurrent: 1,
-		MaxBudget:     2,
+		MaxCapacity:   2,
 		MaxQueueSize:  1,
 	})
 
@@ -186,7 +186,7 @@ func TestFullQueueAndDuplicateRemainUnchanged(t *testing.T) {
 		)
 	}
 
-	// A transaction that exceeds the total budget
+	// A transaction that exceeds the total capacity
 	decision, err = controller.Submit(stressOperation("oversized", 3))
 	if decision != Rejected || err == nil {
 		t.Fatalf(
@@ -222,9 +222,9 @@ func TestFullQueueAndDuplicateRemainUnchanged(t *testing.T) {
 }
 
 func TestFIFOHeadDoesNotFit(t *testing.T) {
-	controller, err := New(settings.Limits{
+	controller, err := New(limits.Limits{
 		MaxConcurrent: 3,
-		MaxBudget:     10,
+		MaxCapacity:   10,
 		MaxQueueSize:  3,
 	})
 

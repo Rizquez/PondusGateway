@@ -1,4 +1,4 @@
-package settings
+package limits
 
 import "errors"
 
@@ -6,7 +6,7 @@ import "errors"
 // used to control the execution of operations.
 type Limits struct {
 	MaxConcurrent int
-	MaxBudget     uint64
+	MaxCapacity   uint64
 	MaxQueueSize  int
 }
 
@@ -15,7 +15,7 @@ type Limits struct {
 //
 // The required conditions are:
 //   - MaxConcurrent must be greater than zero.
-//   - MaxBudget must be greater than zero.
+//   - MaxCapacity must be greater than zero.
 //   - MaxQueueSize cannot be negative; a value of zero is allowed.
 //
 // Returns an error describing the first violated constraint,
@@ -27,8 +27,8 @@ func (limits Limits) Validate() error {
 		return errors.New("max concurrent must be greater than zero")
 	}
 
-	if limits.MaxBudget == 0 {
-		return errors.New("max budget must be greater than zero")
+	if limits.MaxCapacity == 0 {
+		return errors.New("max capacity must be greater than zero")
 	}
 
 	if limits.MaxQueueSize < 0 {

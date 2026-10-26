@@ -1,7 +1,7 @@
 package scheduler
 
 import (
-	"pondus-gateway/internal/operation"
+	"pondus-gateway/internal/core"
 	"reflect"
 	"testing"
 )
@@ -9,7 +9,7 @@ import (
 func TestFIFO(t *testing.T) {
 	tests := []struct {
 		name      string
-		pending   []operation.Operation
+		pending   []core.Operation
 		available uint64
 		want      int
 	}{
@@ -21,7 +21,7 @@ func TestFIFO(t *testing.T) {
 		},
 		{
 			name: "first operation fits",
-			pending: []operation.Operation{
+			pending: []core.Operation{
 				{ID: "a", Cost: 5},
 				{ID: "b", Cost: 3},
 			},
@@ -30,7 +30,7 @@ func TestFIFO(t *testing.T) {
 		},
 		{
 			name: "first operation does not fit",
-			pending: []operation.Operation{
+			pending: []core.Operation{
 				{ID: "a", Cost: 8},
 				{ID: "b", Cost: 1},
 			},
@@ -39,7 +39,7 @@ func TestFIFO(t *testing.T) {
 		},
 		{
 			name: "exact available capacity",
-			pending: []operation.Operation{
+			pending: []core.Operation{
 				{ID: "a", Cost: 10},
 			},
 			available: 10,
@@ -47,7 +47,7 @@ func TestFIFO(t *testing.T) {
 		},
 		{
 			name: "no capacity available",
-			pending: []operation.Operation{
+			pending: []core.Operation{
 				{ID: "a", Cost: 1},
 			},
 			available: 0,
@@ -74,7 +74,7 @@ func TestFIFO(t *testing.T) {
 func TestFIFOSelection(t *testing.T) {
 	tests := []struct {
 		name      string
-		pending   []operation.Operation
+		pending   []core.Operation
 		available uint64
 		want      int
 	}{
@@ -85,7 +85,7 @@ func TestFIFOSelection(t *testing.T) {
 		},
 		{
 			name: "no capacity",
-			pending: []operation.Operation{
+			pending: []core.Operation{
 				{ID: "a", Cost: 1},
 			},
 			available: 0,
@@ -93,7 +93,7 @@ func TestFIFOSelection(t *testing.T) {
 		},
 		{
 			name: "exact fit",
-			pending: []operation.Operation{
+			pending: []core.Operation{
 				{ID: "a", Cost: 5},
 			},
 			available: 5,
@@ -101,7 +101,7 @@ func TestFIFOSelection(t *testing.T) {
 		},
 		{
 			name: "first fits",
-			pending: []operation.Operation{
+			pending: []core.Operation{
 				{ID: "a", Cost: 3},
 				{ID: "b", Cost: 1},
 			},
@@ -110,7 +110,7 @@ func TestFIFOSelection(t *testing.T) {
 		},
 		{
 			name: "first blocks smaller",
-			pending: []operation.Operation{
+			pending: []core.Operation{
 				{ID: "a", Cost: 8},
 				{ID: "b", Cost: 1},
 			},
@@ -118,8 +118,8 @@ func TestFIFOSelection(t *testing.T) {
 			want:      -1,
 		},
 		{
-			name: "large budget",
-			pending: []operation.Operation{
+			name: "large capacity",
+			pending: []core.Operation{
 				{ID: "a", Cost: 2},
 			},
 			available: 100,
@@ -148,7 +148,7 @@ func TestFIFOSelection(t *testing.T) {
 }
 
 func TestFIFODoesNotModifyPending(t *testing.T) {
-	pending := []operation.Operation{
+	pending := []core.Operation{
 		{
 			ID:       "a",
 			ClientID: "client-1",
@@ -164,7 +164,7 @@ func TestFIFODoesNotModifyPending(t *testing.T) {
 	}
 
 	before := append(
-		[]operation.Operation(nil),
+		[]core.Operation(nil),
 		pending...,
 	)
 
@@ -183,7 +183,7 @@ func TestFIFODoesNotModifyPending(t *testing.T) {
 }
 
 func TestFIFOIsDeterministic(t *testing.T) {
-	pending := []operation.Operation{
+	pending := []core.Operation{
 		{ID: "first", Cost: 7},
 		{ID: "second", Cost: 1},
 	}

@@ -28,24 +28,29 @@
 ```
 pondus-gateway
 ├── internal
-│   ├── admission
+│   ├── capacity
+│   │   ├── capacity_edge_test.go
+│   │   ├── capacity_test.go
+│   │   └── capacity.go
+│   ├── controller
 │   │   ├── controller_stress_test.go
 │   │   ├── controller_test.go
 │   │   └── controller.go
-│   ├── budget
-│   │   ├── budget_edge_test.go
-│   │   ├── budget_test.go
-│   │   └── budget.go
-│   ├── operation
+│   ├── core
 │   │   ├── lifecycle_test.go
 │   │   ├── lifecycle.go
 │   │   ├── operation_test.go
 │   │   ├── operation.go
 │   │   ├── state_test.go
 │   │   └── state.go
-│   └── settings
-│       ├── limits_test.go
-│       └── limits.go
+│   ├── limits
+│   │   ├── limits_test.go
+│   │   └── limits.go
+│   └── scheduler
+│       ├── capacity_fit_test.go
+│       ├── capacity_fit_test.go
+│       ├── fifo_test.go
+│       └── fifo.go
 ├── .gitignore
 ├── go.mod
 ├── LICENSE

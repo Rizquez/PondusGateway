@@ -1,4 +1,4 @@
-package budget
+package capacity
 
 import (
 	"errors"
@@ -9,59 +9,59 @@ import (
 	"testing"
 )
 
-func assertBudget(t *testing.T, manager *Manager, wantUsed, wantAvailable uint64) {
+func assertCapacity(t *testing.T, capacity *Capacity, wantUsed uint64, wantAvailable uint64) {
 	t.Helper()
 
-	used, available := manager.Snapshot()
+	used, available := capacity.Snapshot()
 
 	if used != wantUsed || available != wantAvailable {
 		t.Fatalf(
-			"budget: used=%d, available=%d; want used=%d, available=%d",
+			"capacity: used=%d, available=%d; want used=%d, available=%d",
 			used, available, wantUsed, wantAvailable,
 		)
 	}
 }
 
-func TestMaximumBudget(t *testing.T) {
-	manager, err := New(math.MaxUint64)
+func TestMaximumCapacity(t *testing.T) {
+	capacity, err := New(math.MaxUint64)
 
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := manager.Reserve("a", math.MaxUint64-1); err != nil {
+	if err := capacity.Reserve("a", math.MaxUint64-1); err != nil {
 		t.Fatal(err)
 	}
 
 	// Only one unit is left
-	if err := manager.Reserve("b", 2); !errors.Is(err, ErrInsufficient) {
+	if err := capacity.Reserve("b", 2); !errors.Is(err, ErrInsufficient) {
 		t.Fatalf(
-			"expected insufficient budget, got %v",
+			"expected insufficient capacity, got %v",
 			err,
 		)
 	}
 
-	if err := manager.Reserve("b", 1); err != nil {
+	if err := capacity.Reserve("b", 1); err != nil {
 		t.Fatal(err)
 	}
 
-	assertBudget(t, manager, math.MaxUint64, 0)
+	assertCapacity(t, capacity, math.MaxUint64, 0)
 
-	if err := manager.Release("a"); err != nil {
+	if err := capacity.Release("a"); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := manager.Release("b"); err != nil {
+	if err := capacity.Release("b"); err != nil {
 		t.Fatal(err)
 	}
 
-	assertBudget(t, manager, 0, math.MaxUint64)
+	assertCapacity(t, capacity, 0, math.MaxUint64)
 }
 
-func TestFailedReservationsDoNotChangeBudget(t *testing.T) {
-	manager, _ := New(10)
+func TestFailedReservationsDoNotChangeCapacity(t *testing.T) {
+	capacity, _ := New(10)
 
-	if err := manager.Reserve("a", 7); err != nil {
+	if err := capacity.Reserve("a", 7); err != nil {
 		t.Fatal(err)
 	}
 
@@ -77,7 +77,7 @@ func TestFailedReservationsDoNotChangeBudget(t *testing.T) {
 	}
 
 	for _, attempt := range attempts {
-		err := manager.Reserve(attempt.id, attempt.cost)
+		err := capacity.Reserve(attempt.id, attempt.cost)
 
 		if !errors.Is(err, attempt.want) {
 			t.Fatalf(
@@ -86,14 +86,14 @@ func TestFailedReservationsDoNotChangeBudget(t *testing.T) {
 			)
 		}
 
-		assertBudget(t, manager, 7, 3)
+		assertCapacity(t, capacity, 7, 3)
 	}
 }
 
 func TestConcurrentReleaseOnlyOnce(t *testing.T) {
-	manager, _ := New(10)
+	capacity, _ := New(10)
 
-	if err := manager.Reserve("a", 8); err != nil {
+	if err := capacity.Reserve("a", 8); err != nil {
 		t.Fatal(err)
 	}
 
@@ -102,7 +102,7 @@ func TestConcurrentReleaseOnlyOnce(t *testing.T) {
 
 	for range 100 {
 		wg.Go(func() {
-			err := manager.Release("a")
+			err := capacity.Release("a")
 
 			switch {
 			case err == nil:
@@ -129,25 +129,25 @@ func TestConcurrentReleaseOnlyOnce(t *testing.T) {
 		)
 	}
 
-	assertBudget(t, manager, 0, 10)
+	assertCapacity(t, capacity, 0, 10)
 }
 
 func TestRepeatedReserveReleaseCycles(t *testing.T) {
-	manager, _ := New(50)
+	capacity, _ := New(50)
 
 	for i := range 1000 {
 		id := fmt.Sprintf("op-%d", i)
 
-		if err := manager.Reserve(id, 50); err != nil {
+		if err := capacity.Reserve(id, 50); err != nil {
 			t.Fatal(err)
 		}
 
-		assertBudget(t, manager, 50, 0)
+		assertCapacity(t, capacity, 50, 0)
 
-		if err := manager.Release(id); err != nil {
+		if err := capacity.Release(id); err != nil {
 			t.Fatal(err)
 		}
 
-		assertBudget(t, manager, 0, 50)
+		assertCapacity(t, capacity, 0, 50)
 	}
 }

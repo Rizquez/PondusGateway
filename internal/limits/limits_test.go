@@ -1,4 +1,4 @@
-package settings
+package limits
 
 import "testing"
 
@@ -12,7 +12,7 @@ func TestLimitsValidate(t *testing.T) {
 			name: "valid",
 			limits: Limits{
 				MaxConcurrent: 8,
-				MaxBudget:     30,
+				MaxCapacity:   30,
 				MaxQueueSize:  100,
 			},
 			wantErr: false,
@@ -21,7 +21,7 @@ func TestLimitsValidate(t *testing.T) {
 			name: "queue disabled",
 			limits: Limits{
 				MaxConcurrent: 1,
-				MaxBudget:     1,
+				MaxCapacity:   1,
 				MaxQueueSize:  0,
 			},
 			wantErr: false,
@@ -30,7 +30,7 @@ func TestLimitsValidate(t *testing.T) {
 			name: "zero concurrency",
 			limits: Limits{
 				MaxConcurrent: 0,
-				MaxBudget:     30,
+				MaxCapacity:   30,
 				MaxQueueSize:  100,
 			},
 			wantErr: true,
@@ -39,16 +39,16 @@ func TestLimitsValidate(t *testing.T) {
 			name: "negative concurrency",
 			limits: Limits{
 				MaxConcurrent: -1,
-				MaxBudget:     30,
+				MaxCapacity:   30,
 				MaxQueueSize:  100,
 			},
 			wantErr: true,
 		},
 		{
-			name: "zero budget",
+			name: "zero capacity",
 			limits: Limits{
 				MaxConcurrent: 8,
-				MaxBudget:     0,
+				MaxCapacity:   0,
 				MaxQueueSize:  100,
 			},
 			wantErr: true,
@@ -57,7 +57,7 @@ func TestLimitsValidate(t *testing.T) {
 			name: "negative queue",
 			limits: Limits{
 				MaxConcurrent: 8,
-				MaxBudget:     30,
+				MaxCapacity:   30,
 				MaxQueueSize:  -1,
 			},
 			wantErr: true,

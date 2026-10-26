@@ -1,4 +1,4 @@
-package operation
+package core
 
 // Represents the status of an operation throughout its lifecycle.
 type State string

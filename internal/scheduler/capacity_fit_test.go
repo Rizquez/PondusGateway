@@ -1,7 +1,7 @@
 package scheduler
 
 import (
-	"pondus-gateway/internal/operation"
+	"pondus-gateway/internal/core"
 	"reflect"
 	"testing"
 )
@@ -9,7 +9,7 @@ import (
 func TestCapacityFit(t *testing.T) {
 	tests := []struct {
 		name      string
-		pending   []operation.Operation
+		pending   []core.Operation
 		available uint64
 		want      int
 	}{
@@ -21,7 +21,7 @@ func TestCapacityFit(t *testing.T) {
 		},
 		{
 			name: "no operation fits",
-			pending: []operation.Operation{
+			pending: []core.Operation{
 				{ID: "a", Cost: 9},
 				{ID: "b", Cost: 8},
 			},
@@ -30,7 +30,7 @@ func TestCapacityFit(t *testing.T) {
 		},
 		{
 			name: "first operation fits",
-			pending: []operation.Operation{
+			pending: []core.Operation{
 				{ID: "a", Cost: 2},
 				{ID: "b", Cost: 1},
 			},
@@ -39,7 +39,7 @@ func TestCapacityFit(t *testing.T) {
 		},
 		{
 			name: "later operation fits",
-			pending: []operation.Operation{
+			pending: []core.Operation{
 				{ID: "a", Cost: 12},
 				{ID: "b", Cost: 5},
 				{ID: "c", Cost: 3},
@@ -49,7 +49,7 @@ func TestCapacityFit(t *testing.T) {
 		},
 		{
 			name: "exact capacity",
-			pending: []operation.Operation{
+			pending: []core.Operation{
 				{ID: "a", Cost: 12},
 				{ID: "b", Cost: 8},
 			},
@@ -58,7 +58,7 @@ func TestCapacityFit(t *testing.T) {
 		},
 		{
 			name: "zero available",
-			pending: []operation.Operation{
+			pending: []core.Operation{
 				{ID: "a", Cost: 1},
 			},
 			available: 0,
@@ -71,7 +71,7 @@ func TestCapacityFit(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			before := append(
-				[]operation.Operation(nil),
+				[]core.Operation(nil),
 				test.pending...,
 			)
 
