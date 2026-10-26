@@ -7,6 +7,10 @@ import (
 
 // Represents an operation associated with a customer,
 // identified by an ID, a type, and a cost.
+//
+// TODO: Define what units Cost represents before implementing
+// capacity control, and determine whether costs will be assigned
+// manually or calculated using a consumption model.
 type Operation struct {
 	ID       string
 	ClientID string
@@ -43,6 +47,3 @@ func (operation Operation) Validate() error {
 		return nil
 	}
 }
-
-// TODO: Define what units Cost represents before implementing capacity control, and determine whether
-// costs will be assigned manually or calculated using a consumption model.
