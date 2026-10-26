@@ -90,6 +90,26 @@ func NewWithSelector(limits limits.Limits, selector scheduler.Selector) (*Contro
 	}, nil
 }
 
+// Creates an admission controller using the CapacityFit strategy with
+// starvation protection.
+//
+// The maxBypasses parameter sets the limit on the number of bypasses
+// used by the StarvationGuard scheduler to protect pending operations.
+//
+// Initializes the scheduler using NewStarvationGuard and delegates the
+// creation of the controller to NewWithSelector.
+//
+// Returns a pointer to the created controller or an error if the scheduler
+// initialization or controller validation fails.
+func NewWithStarvationGuard(limits limits.Limits, maxBypasses uint64) (*Controller, error) {
+	guard, err := scheduler.NewStarvationGuard(scheduler.CapacityFit{}, maxBypasses)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewWithSelector(limits, guard)
+}
+
 // Evaluates a transaction and determines whether it can be executed, placed on
 // hold or rejected.
 //

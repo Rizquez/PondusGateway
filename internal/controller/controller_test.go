@@ -191,8 +191,8 @@ func TestCapacityFitAdmission(t *testing.T) {
 		}
 	}
 
-	// When B is released, 4 units remain available.
-	// Big needs 8, so CapacityFit skips it.
+	// When B is released, 4 units remain available
+	// Big needs 8, so CapacityFit skips it
 	promoted, err := controller.Finish("b")
 	if err != nil {
 		t.Fatal(err)
@@ -216,6 +216,106 @@ func TestCapacityFitAdmission(t *testing.T) {
 	if active != 3 || queued != 1 || used != 9 {
 		t.Fatalf(
 			"snapshot: active=%d queued=%d used=%d",
+			active, queued, used,
+		)
+	}
+}
+
+func TestStarvationGuardAdmission(t *testing.T) {
+	guard, err := scheduler.NewStarvationGuard(scheduler.CapacityFit{}, 2)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	controller, err := NewWithSelector(limits.Limits{
+		MaxConcurrent: 4,
+		MaxCapacity:   10,
+		MaxQueueSize:  5,
+	}, guard)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	operations := []struct {
+		id   string
+		cost uint64
+		want Decision
+	}{
+		{"a", 6, Started},
+		{"b", 4, Started},
+		{"big", 8, Queued},
+		{"small1", 1, Queued},
+		{"small2", 2, Queued},
+		{"small3", 1, Queued},
+	}
+
+	for _, item := range operations {
+		operation := core.Operation{
+			ID:       item.id,
+			ClientID: "client-1",
+			Type:     "compute",
+			Cost:     item.cost,
+		}
+
+		decision, err := controller.Submit(operation)
+		if err != nil || decision != item.want {
+			t.Fatalf(
+				"Submit(%s): decision=%s, err=%v",
+				item.id, decision, err,
+			)
+		}
+	}
+
+	// 4 units are released
+	promoted, err := controller.Finish("b")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Exactly two passing maneuvers are allowed
+	if len(promoted) != 2 || promoted[0].ID != "small1" || promoted[1].ID != "small2" {
+		t.Fatalf(
+			"unexpected promotions: %+v",
+			promoted,
+		)
+	}
+
+	active, queued, used := controller.Snapshot()
+	if active != 3 || queued != 2 || used != 9 {
+		t.Fatalf(
+			"snapshot: active=%d queued=%d used=%d",
+			active, queued, used,
+		)
+	}
+
+	// A is released, but Big still doesn't fit
+	promoted, err = controller.Finish("a")
+	if err != nil || len(promoted) != 0 {
+		t.Fatalf(
+			"unexpected promotion before big fits: %+v, %v",
+			promoted, err,
+		)
+	}
+
+	// small1 is released, now big can begin
+	promoted, err = controller.Finish("small1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(promoted) != 1 || promoted[0].ID != "big" {
+		t.Fatalf(
+			"expected big promotion: %+v",
+			promoted,
+		)
+	}
+
+	active, queued, used = controller.Snapshot()
+	if active != 2 || queued != 1 || used != 10 {
+		t.Fatalf(
+			"final snapshot: active=%d queued=%d used=%d",
 			active, queued, used,
 		)
 	}
