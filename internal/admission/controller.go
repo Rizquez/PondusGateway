@@ -3,9 +3,9 @@ package admission
 import (
 	"errors"
 	"fmt"
-	"service-gateway/internal/budget"
-	"service-gateway/internal/operation"
-	"service-gateway/internal/settings"
+	"pondus-gateway/internal/budget"
+	"pondus-gateway/internal/operation"
+	"pondus-gateway/internal/settings"
 	"sync"
 )
 

@@ -1,4 +1,4 @@
-# ServiceGateway - v0.1.0
+# PondusGateway - v0.2.0
 
 ## 🚧 Roadmap
 
@@ -26,7 +26,7 @@
 ## 📂 Project structure
 
 ```
-service-gateway
+pondus-gateway
 ├── internal
 │   ├── admission
 │   │   ├── controller_stress_test.go
