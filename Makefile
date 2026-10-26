@@ -5,5 +5,8 @@ all-unit-tests:
 	go test -race ./... -count=$(COUNT)
 	go vet ./...
 
-admission-unit-tests:
-	go test ./internal/admission -run 'TestSaturation|TestFullQueue|TestFIFO' -count=$(COUNT)
+controller-unit-tests:
+	go test ./internal/controller -run 'TestSaturation|TestFullQueue|TestFIFO' -count=$(COUNT)
+
+comparison-unit-tests:
+	go test ./internal/controller -run 'TestCompareSchedulers' -v
