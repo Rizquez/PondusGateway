@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"pondus-gateway/internal/budget"
 	"pondus-gateway/internal/operation"
+	"pondus-gateway/internal/scheduler"
 	"pondus-gateway/internal/settings"
 	"sync"
 )
@@ -32,12 +33,13 @@ const (
 // It protects its internal state using a mutex to allow
 // secure access from multiple goroutines.
 type Controller struct {
-	mutex   sync.Mutex
-	limits  settings.Limits
-	budget  *budget.Manager
-	active  map[string]operation.Operation
-	pending []operation.Operation
-	known   map[string]struct{}
+	mutex    sync.Mutex
+	limits   settings.Limits
+	budget   *budget.Manager
+	selector scheduler.Selector
+	active   map[string]operation.Operation
+	pending  []operation.Operation
+	known    map[string]struct{}
 }
 
 // Creates an admission controller with the specified configuration limits.
@@ -58,10 +60,11 @@ func New(limits settings.Limits) (*Controller, error) {
 	}
 
 	return &Controller{
-		limits: limits,
-		budget: max,
-		active: make(map[string]operation.Operation),
-		known:  make(map[string]struct{}),
+		limits:   limits,
+		budget:   max,
+		selector: scheduler.FIFO{},
+		active:   make(map[string]operation.Operation),
+		known:    make(map[string]struct{}),
 	}, nil
 }
 
@@ -128,22 +131,28 @@ func (controller *Controller) Submit(operation operation.Operation) (Decision, e
 	return Queued, nil
 }
 
-// Terminates an active operation, releases its budget reservation and
+// Finish terminates an active operation, releases its budget allocation and
 // attempts to promote pending operations to execution.
 //
-// Pending operations are processed in FIFO order.
+// The selection of pending operations is delegated to the configured scheduler,
+// which determines the next operation to execute based on the available budget.
 //
-// Each promotion requires sufficient concurrency and budget.
+// Promotions continue as long as there are pending operations, concurrency capacity
+// is available, and the scheduler selects an operation.
 //
-// If the first pending operation does not have sufficient budget,
-// processing stops without evaluating subsequent operations.
+// Returns the operations promoted during the call, in the order in which they were
+// selected, or an error if:
+//   - The specified operation is not active.
+//   - Budget release or reservation fails.
+//   - The planner returns an index outside the allowed range.
+//   - The selected operation exceeds the available budget.
 //
-// Returns the operations promoted during the call, in the order they were
-// admitted, or an error if the specified operation is not active or if a
-// failure occurs while releasing or reserving budget.
+// If the scheduler returns -1, processing ends without an error.
 //
-// If a promotion fails, it returns the operations promoted up to that point
-// along with the corresponding error.
+// If an error occurs during promotions, it returns the operations promoted up to that
+// point along with the corresponding error.
+//
+// Access to the controller’s state is protected by mutual exclusion.
 func (controller *Controller) Finish(id string) ([]operation.Operation, error) {
 	controller.mutex.Lock()
 	defer controller.mutex.Unlock()
@@ -164,20 +173,41 @@ func (controller *Controller) Finish(id string) ([]operation.Operation, error) {
 	for len(controller.pending) > 0 &&
 		len(controller.active) < controller.limits.MaxConcurrent {
 
-		pending := controller.pending[0]
-
 		_, available := controller.budget.Snapshot()
 
-		if pending.Cost > available {
+		index := controller.selector.Next(
+			controller.pending,
+			available,
+		)
+
+		if index == -1 {
 			break
+		}
+
+		if index < 0 || index >= len(controller.pending) {
+			return promoted, fmt.Errorf(
+				"scheduler returned invalid index: %d",
+				index,
+			)
+		}
+
+		pending := controller.pending[index]
+
+		if pending.Cost > available {
+			return promoted, fmt.Errorf("scheduler selected operation exceeding available budget")
 		}
 
 		if err := controller.budget.Reserve(pending.ID, pending.Cost); err != nil {
 			return promoted, err
 		}
 
-		controller.pending[0] = operation.Operation{}
-		controller.pending = controller.pending[1:]
+		copy(
+			controller.pending[index:],
+			controller.pending[index+1:],
+		)
+
+		controller.pending[len(controller.pending)-1] = operation.Operation{}
+		controller.pending = controller.pending[:len(controller.pending)-1]
 
 		controller.active[pending.ID] = pending
 		promoted = append(promoted, pending)
