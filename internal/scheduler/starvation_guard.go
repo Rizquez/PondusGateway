@@ -74,37 +74,37 @@ func NewStarvationGuard(selector Selector, maxBypasses uint64) (*StarvationGuard
 // TODO: The lock limits preemptions, but does not guarantee a maximum wait time;
 // the execution of the locked operation still depends on sufficient capacity becoming
 // available.
-func (guard *StarvationGuard) Next(pending []core.Operation, available uint64) int {
-	guard.mutex.Lock()
-	defer guard.mutex.Unlock()
+func (starvation *StarvationGuard) Next(pending []core.Operation, available uint64) int {
+	starvation.mutex.Lock()
+	defer starvation.mutex.Unlock()
 
 	if len(pending) == 0 {
-		guard.headID = ""
-		guard.bypasses = 0
+		starvation.headID = ""
+		starvation.bypasses = 0
 		return -1
 	}
 
 	// Resets the counter when the first pending operation changes
-	if guard.headID != pending[0].ID {
-		guard.headID = pending[0].ID
-		guard.bypasses = 0
+	if starvation.headID != pending[0].ID {
+		starvation.headID = pending[0].ID
+		starvation.bypasses = 0
 	}
 
 	// Prioritize the first operation when sufficient capacity is available
 	if pending[0].Cost <= available {
-		guard.bypasses = 0
+		starvation.bypasses = 0
 		return 0
 	}
 
 	// Prevents further advances when the limit is reached
-	if guard.bypasses >= guard.maxBypasses {
+	if starvation.bypasses >= starvation.maxBypasses {
 		return -1
 	}
 
-	index := guard.selector.Next(pending, available)
+	index := starvation.selector.Next(pending, available)
 
 	if index > 0 && index < len(pending) {
-		guard.bypasses++
+		starvation.bypasses++
 	}
 
 	return index

@@ -1,10 +1,9 @@
-package controller
+package admission
 
 import (
 	"errors"
 	"fmt"
 	"pondus-gateway/internal/core"
-	"pondus-gateway/internal/limits"
 	"pondus-gateway/internal/scheduler"
 	"sync"
 	"testing"
@@ -20,7 +19,7 @@ func testOperation(id string, cost uint64) core.Operation {
 }
 
 func TestAdmission(t *testing.T) {
-	controller, err := New(limits.Limits{
+	controller, err := New(core.Limits{
 		MaxConcurrent: 2,
 		MaxCapacity:   10,
 		MaxQueueSize:  2,
@@ -83,7 +82,7 @@ func TestAdmission(t *testing.T) {
 }
 
 func TestAdmissionErrors(t *testing.T) {
-	controller, err := New(limits.Limits{
+	controller, err := New(core.Limits{
 		MaxConcurrent: 1,
 		MaxCapacity:   3,
 		MaxQueueSize:  0,
@@ -115,7 +114,7 @@ func TestAdmissionErrors(t *testing.T) {
 }
 
 func TestConcurrentAdmission(t *testing.T) {
-	controller, err := New(limits.Limits{
+	controller, err := New(core.Limits{
 		MaxConcurrent: 5,
 		MaxCapacity:   5,
 		MaxQueueSize:  10,
@@ -152,7 +151,7 @@ func TestConcurrentAdmission(t *testing.T) {
 }
 
 func TestCapacityFitAdmission(t *testing.T) {
-	controller, err := NewWithSelector(limits.Limits{
+	controller, err := NewWithSelector(core.Limits{
 		MaxConcurrent: 3,
 		MaxCapacity:   10,
 		MaxQueueSize:  4,
@@ -228,7 +227,7 @@ func TestStarvationGuardAdmission(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	controller, err := NewWithSelector(limits.Limits{
+	controller, err := NewWithSelector(core.Limits{
 		MaxConcurrent: 4,
 		MaxCapacity:   10,
 		MaxQueueSize:  5,

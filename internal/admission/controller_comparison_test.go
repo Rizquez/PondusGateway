@@ -1,8 +1,7 @@
-package controller
+package admission
 
 import (
 	"pondus-gateway/internal/core"
-	"pondus-gateway/internal/limits"
 	"pondus-gateway/internal/scheduler"
 	"testing"
 )
@@ -51,7 +50,7 @@ func TestCompareSchedulers(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			controller, err := NewWithSelector(
-				limits.Limits{
+				core.Limits{
 					MaxConcurrent: 4,
 					MaxCapacity:   10,
 					MaxQueueSize:  4,

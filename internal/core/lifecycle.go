@@ -26,11 +26,11 @@ func (lifecycle *Lifecycle) State() State {
 //
 // Otherwise, it returns an error that identifies the source and destination
 // states, without modifying the current state.
-func (lifecycle *Lifecycle) TransitionTo(next State) error {
-	if !lifecycle.state.CanTransitionTo(next) {
-		return fmt.Errorf("invalid operation state transition: %s -> %s", lifecycle.state, next)
+func (lifecycle *Lifecycle) TransitionTo(state State) error {
+	if !lifecycle.state.CanTransitionTo(state) {
+		return fmt.Errorf("invalid operation state transition: %s -> %s", lifecycle.state, state)
 	}
 
-	lifecycle.state = next
+	lifecycle.state = state
 	return nil
 }

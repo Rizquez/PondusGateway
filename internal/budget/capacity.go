@@ -1,4 +1,4 @@
-package capacity
+package budget
 
 import (
 	"errors"

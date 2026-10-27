@@ -1,12 +1,12 @@
-package controller
+package admission
 
 import (
 	"errors"
 	"fmt"
-	"pondus-gateway/internal/capacity"
+	"pondus-gateway/internal/budget"
 	"pondus-gateway/internal/core"
-	"pondus-gateway/internal/limits"
 	"pondus-gateway/internal/scheduler"
+
 	"sync"
 )
 
@@ -34,8 +34,8 @@ const (
 // from multiple goroutines.
 type Controller struct {
 	mutex    sync.Mutex
-	limits   limits.Limits
-	capacity *capacity.Capacity
+	limits   core.Limits
+	capacity *budget.Capacity
 	selector scheduler.Selector
 	active   map[string]core.Operation
 	pending  []core.Operation
@@ -50,7 +50,7 @@ type Controller struct {
 //
 // Returns the initialized controller or an error if the configuration
 // provided is invalid.
-func New(limits limits.Limits) (*Controller, error) {
+func New(limits core.Limits) (*Controller, error) {
 	return NewWithSelector(limits, scheduler.FIFO{})
 }
 
@@ -66,7 +66,7 @@ func New(limits limits.Limits) (*Controller, error) {
 // Returns a pointer to the created controller or an error if the limits
 // are invalid, the scheduler is nil, or the capacity manager initialization
 // fails.
-func NewWithSelector(limits limits.Limits, selector scheduler.Selector) (*Controller, error) {
+func NewWithSelector(limits core.Limits, selector scheduler.Selector) (*Controller, error) {
 	if err := limits.Validate(); err != nil {
 		return nil, err
 	}
@@ -75,7 +75,7 @@ func NewWithSelector(limits limits.Limits, selector scheduler.Selector) (*Contro
 		return nil, errors.New("scheduler cannot be nil")
 	}
 
-	max, err := capacity.New(limits.MaxCapacity)
+	max, err := budget.New(limits.MaxCapacity)
 	if err != nil {
 		return nil, err
 	}
@@ -101,13 +101,13 @@ func NewWithSelector(limits limits.Limits, selector scheduler.Selector) (*Contro
 //
 // Returns a pointer to the created controller or an error if the scheduler
 // initialization or controller validation fails.
-func NewWithStarvationGuard(limits limits.Limits, maxBypasses uint64) (*Controller, error) {
-	guard, err := scheduler.NewStarvationGuard(scheduler.CapacityFit{}, maxBypasses)
+func NewWithStarvationGuard(limits core.Limits, maxBypasses uint64) (*Controller, error) {
+	starvation, err := scheduler.NewStarvationGuard(scheduler.CapacityFit{}, maxBypasses)
 	if err != nil {
 		return nil, err
 	}
 
-	return NewWithSelector(limits, guard)
+	return NewWithSelector(limits, starvation)
 }
 
 // Evaluates a transaction and determines whether it can be executed, placed on

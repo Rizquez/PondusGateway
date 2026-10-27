@@ -6,7 +6,7 @@ import (
 )
 
 func TestStarvationGuard(t *testing.T) {
-	guard, err := NewStarvationGuard(CapacityFit{}, 2)
+	starvation, err := NewStarvationGuard(CapacityFit{}, 2)
 
 	if err != nil {
 		t.Fatal(err)
@@ -20,7 +20,7 @@ func TestStarvationGuard(t *testing.T) {
 	}
 
 	// First pass
-	if got := guard.Next(pending, 4); got != 1 {
+	if got := starvation.Next(pending, 4); got != 1 {
 		t.Fatalf(
 			"first selection = %d, want 1",
 			got,
@@ -31,7 +31,7 @@ func TestStarvationGuard(t *testing.T) {
 	pending = append(pending[:1], pending[2:]...)
 
 	// Second pass
-	if got := guard.Next(pending, 3); got != 1 {
+	if got := starvation.Next(pending, 3); got != 1 {
 		t.Fatalf(
 			"second selection = %d, want 1",
 			got,
@@ -42,15 +42,15 @@ func TestStarvationGuard(t *testing.T) {
 	pending = append(pending[:1], pending[2:]...)
 
 	// Overtaking big is not allowed
-	if got := guard.Next(pending, 3); got != -1 {
+	if got := starvation.Next(pending, 3); got != -1 {
 		t.Fatalf(
-			"guard selection = %d, want -1",
+			"starvation selection = %d, want -1",
 			got,
 		)
 	}
 
 	// When big is an option, it should be selected
-	if got := guard.Next(pending, 8); got != 0 {
+	if got := starvation.Next(pending, 8); got != 0 {
 		t.Fatalf(
 			"head selection = %d, want 0",
 			got,
@@ -60,7 +60,7 @@ func TestStarvationGuard(t *testing.T) {
 	// The following item is checked
 	pending = pending[1:]
 
-	if got := guard.Next(pending, 1); got != 0 {
+	if got := starvation.Next(pending, 1); got != 0 {
 		t.Fatalf(
 			"new head selection = %d, want 0",
 			got,

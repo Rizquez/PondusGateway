@@ -1,10 +1,9 @@
-package controller
+package admission
 
 import (
 	"errors"
 	"fmt"
 	"pondus-gateway/internal/core"
-	"pondus-gateway/internal/limits"
 	"sync"
 	"testing"
 )
@@ -21,7 +20,7 @@ func stressOperation(id string, cost uint64) core.Operation {
 func TestSaturationAndConcurrentFinish(t *testing.T) {
 	const total = 50
 
-	controller, err := New(limits.Limits{
+	controller, err := New(core.Limits{
 		MaxConcurrent: 5,
 		MaxCapacity:   5,
 		MaxQueueSize:  total - 5,
@@ -147,7 +146,7 @@ func TestSaturationAndConcurrentFinish(t *testing.T) {
 }
 
 func TestFullQueueAndDuplicateRemainUnchanged(t *testing.T) {
-	controller, err := New(limits.Limits{
+	controller, err := New(core.Limits{
 		MaxConcurrent: 1,
 		MaxCapacity:   2,
 		MaxQueueSize:  1,
@@ -222,7 +221,7 @@ func TestFullQueueAndDuplicateRemainUnchanged(t *testing.T) {
 }
 
 func TestFIFOHeadDoesNotFit(t *testing.T) {
-	controller, err := New(limits.Limits{
+	controller, err := New(core.Limits{
 		MaxConcurrent: 3,
 		MaxCapacity:   10,
 		MaxQueueSize:  3,

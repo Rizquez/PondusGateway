@@ -1,4 +1,4 @@
-package limits
+package core
 
 import "testing"
 
