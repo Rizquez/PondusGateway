@@ -50,18 +50,18 @@ Compare all scheduling strategies:
 make compare
 ```
 
+Run tests:
+
+```bash
+make unit-tests
+```
+
 Each operation reserves capacity according to its cost.
 
 The configured SleepExecutor simulates execution duration.
 
 > [!NOTE]
 > Operation cost does not represent CPU or memory consumption.
-
-### Run tests
-
-```bash
-make unit-tests
-```
 
 ## Scheduling strategies
 
@@ -92,18 +92,6 @@ Capacity utilization is sampled periodically.
 
 > [!IMPORTANT]
 > It does not represent actual CPU or memory utilization and short peaks can be missed.
-
-## ⚠️ Limitations
-
-Pondus Gateway is an experimental workload engine.
-
-- Workloads are submitted as finite batches.
-- It does not expose an HTTP or gRPC service.
-- Cancellation depends on executor cooperation.
-- Starvation protection does not guarantee a maximum waiting time.
-- Capacity measurements are sampling-based estimates.
-- The runner does not provide durable persistence or transactional crash recovery.
-- Results depend on workload composition and runtime scheduling.
 
 ## 📂 Project structure
 
@@ -195,6 +183,18 @@ pondus-gateway
 | v0.8.0    | Advanced planning algorithms               |
 | v0.9.0    | Observability and external metrics         |
 | v1.0.0    | First stable version as a reusable library |
+
+## ⚠️ Limitations
+
+Pondus Gateway is an experimental workload engine.
+
+- Workloads are submitted as finite batches.
+- It does not expose an HTTP or gRPC service.
+- Cancellation depends on executor cooperation.
+- Starvation protection does not guarantee a maximum waiting time.
+- Capacity measurements are sampling-based estimates.
+- The runner does not provide durable persistence or transactional crash recovery.
+- Results depend on workload composition and runtime scheduling.
 
 ## 🔒 License
 
