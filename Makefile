@@ -5,7 +5,7 @@ unit-tests:
 	go test -race ./... -count=$(COUNT)
 	go vet ./...
 
-flags:
+default:
 	go run ./cmd/pondus -concurrency 4 -capacity 10 -operations 20 -duration 100ms
 
 basic-client:

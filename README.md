@@ -29,16 +29,16 @@ Pondus Gateway focuses on three priorities:
 Run the default simulation:
 
 ```bash
-make flags
+make default
 ```
 
-Run a YAML configuration:
+Run a basic client (YAML configuration):
 
 ```bash
 make basic-client
 ```
 
-Run a multi-client workload:
+Run a multi-client workload (YAML configuration):
 
 ```bash
 make multi-client
