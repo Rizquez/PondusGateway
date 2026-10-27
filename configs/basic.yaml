@@ -1,0 +1,15 @@
+
+limits:
+  max_concurrent: 4
+  max_capacity: 10
+  max_queue_size: 20
+
+operations:
+  count: 20
+
+executor:
+  type: sleep
+  duration: 100ms
+
+scheduler:
+  type: fifo

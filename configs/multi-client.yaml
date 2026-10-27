@@ -1,0 +1,26 @@
+
+limits:
+  max_concurrent: 3
+  max_capacity: 10
+  max_queue_size: 12
+
+clients:
+  - id: client-a
+    operations: 4
+    cost: 8
+
+  - id: client-b
+    operations: 4
+    cost: 2
+
+  - id: client-c
+    operations: 4
+    cost: 1
+
+executor:
+  type: sleep
+  duration: 100ms
+
+scheduler:
+  type: capacity-fit-guarded
+  max_bypasses: 2
