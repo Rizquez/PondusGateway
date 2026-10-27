@@ -173,29 +173,53 @@ func (controller *Controller) Submit(operation core.Operation) (Decision, error)
 	return Queued, nil
 }
 
-// Finish terminates an active operation, releases its capacity allocation and
-// attempts to promote pending operations to execution.
+// Terminates an active operation, releases its reserved capacity  and attempts
+// to promote pending operations to execution.
 //
 // The selection of pending operations is delegated to the configured scheduler,
-// which determines the next operation to execute based on the available capacity.
+// respecting concurrency and capacity limits.
 //
-// Promotions continue as long as there are pending operations, concurrency capacity
-// is available, and the scheduler selects an operation.
+// Returns the promoted operations, in the order in which they were selected or
+// an error if the operation is not active, capacity release or reservation fails
+// or the scheduler returns an invalid index.
 //
-// Returns the operations promoted during the call, in the order in which they were
-// selected, or an error if:
-//   - The specified operation is not active.
-//   - capacity release or reservation fails.
-//   - The planner returns an index outside the allowed range.
-//   - The selected operation exceeds the available capacity.
-//
-// If the scheduler returns -1, processing ends without an error.
-//
-// If an error occurs during promotions, it returns the operations promoted up to that
-// point along with the corresponding error.
-//
-// Access to the controller’s state is protected by mutual exclusion.
+// If an error occurs during promotions, it returns the operations promoted up to
+// that point along with the corresponding error.
 func (controller *Controller) Finish(id string) ([]core.Operation, error) {
+	return controller.finish(id, true)
+}
+
+// Terminates an active operation and releases its reserved capacity without
+// promoting pending operations.
+//
+// Removes the operation from the active and known operation records, leaving
+// the waiting queue intact.
+//
+// Returns ErrNotActive if the operation is not active an error if capacity
+// release fails or nil if the operation completes successfully.
+func (controller *Controller) FinishWithoutPromotion(id string) error {
+	_, err := controller.finish(id, false)
+	return err
+}
+
+// Completes an active operation and optionally controls the promotion of pending
+// operations.
+//
+// Releases the reserved capacity and removes the operation from the active and known
+// operation records.
+//
+// If promote is true, it attempts to promote operations using the configured scheduler
+// as long as concurrency capacity exists. If false, it terminates without processing the
+// waiting queue.
+//
+// Returns the promoted operations or an error if any of the release, selection or reservation
+// operations fail.
+//
+// If an error occurs during promotions, it preserves the changes made and returns the operations
+// promoted up to that point.
+//
+// All state modifications are performed under mutual exclusion.
+func (controller *Controller) finish(id string, promote bool) ([]core.Operation, error) {
 	controller.mutex.Lock()
 	defer controller.mutex.Unlock()
 
@@ -210,17 +234,16 @@ func (controller *Controller) Finish(id string) ([]core.Operation, error) {
 	delete(controller.active, id)
 	delete(controller.known, id)
 
+	if !promote {
+		return nil, nil
+	}
+
 	var promoted []core.Operation
 
-	for len(controller.pending) > 0 &&
-		len(controller.active) < controller.limits.MaxConcurrent {
+	for len(controller.pending) > 0 && len(controller.active) < controller.limits.MaxConcurrent {
 
 		_, available := controller.capacity.Snapshot()
-
-		index := controller.selector.Next(
-			controller.pending,
-			available,
-		)
+		index := controller.selector.Next(controller.pending, available)
 
 		if index == -1 {
 			break
@@ -233,29 +256,57 @@ func (controller *Controller) Finish(id string) ([]core.Operation, error) {
 			)
 		}
 
-		pending := controller.pending[index]
+		operation := controller.pending[index]
 
-		if pending.Cost > available {
-			return promoted, fmt.Errorf("scheduler selected operation exceeding available capacity")
-		}
-
-		if err := controller.capacity.Reserve(pending.ID, pending.Cost); err != nil {
+		if err := controller.capacity.Reserve(operation.ID, operation.Cost); err != nil {
 			return promoted, err
 		}
 
-		copy(
-			controller.pending[index:],
-			controller.pending[index+1:],
-		)
+		copy(controller.pending[index:], controller.pending[index+1:])
 
 		controller.pending[len(controller.pending)-1] = core.Operation{}
 		controller.pending = controller.pending[:len(controller.pending)-1]
 
-		controller.active[pending.ID] = pending
-		promoted = append(promoted, pending)
+		controller.active[operation.ID] = operation
+		promoted = append(promoted, operation)
 	}
 
 	return promoted, nil
+}
+
+// Cancels all pending operations in the controller.
+//
+// Returns a copy of the pending operations in the order in which
+// they were stored before cancellation.
+//
+// Removes their identifiers from the register of known operations
+// and empties the queue, without modifying active operations or their
+// capacity reservations.
+//
+// If there are no pending operations, it returns nil.
+//
+// The operation is performed under mutual exclusion to ensure state
+// consistency in the face of concurrent accesses.
+func (controller *Controller) CancelPending() []core.Operation {
+	controller.mutex.Lock()
+	defer controller.mutex.Unlock()
+
+	cancelled := append(
+		[]core.Operation(nil),
+		controller.pending...,
+	)
+
+	for _, op := range cancelled {
+		delete(controller.known, op.ID)
+	}
+
+	for i := range controller.pending {
+		controller.pending[i] = core.Operation{}
+	}
+
+	controller.pending = nil
+
+	return cancelled
 }
 
 // Takes a snapshot of the controller's current state.

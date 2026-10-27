@@ -7,7 +7,7 @@ import (
 )
 
 func TestCompareSchedulers(t *testing.T) {
-	guard, err := scheduler.NewStarvationGuard(scheduler.CapacityFit{}, 2)
+	starvation, err := scheduler.NewStarvationGuard(scheduler.CapacityFit{}, 2)
 
 	if err != nil {
 		t.Fatal(err)
@@ -39,7 +39,7 @@ func TestCompareSchedulers(t *testing.T) {
 		},
 		{
 			name:       "CapacityFitGuarded",
-			selector:   guard,
+			selector:   starvation,
 			wantIDs:    []string{"small1", "small2"},
 			wantActive: 3,
 			wantQueued: 2,
