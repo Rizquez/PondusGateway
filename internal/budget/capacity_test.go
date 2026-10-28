@@ -3,98 +3,149 @@ package budget
 import (
 	"errors"
 	"fmt"
+	"math"
 	"sync"
+	"sync/atomic"
 	"testing"
 )
 
-func TestCapacity(t *testing.T) {
+func assertCapacity(t *testing.T, capacity *Capacity, wantUsed uint64, wantAvailable uint64) {
+	t.Helper()
+	used, available := capacity.Snapshot()
+	if used != wantUsed || available != wantAvailable {
+		t.Fatalf("Snapshot() = (%d, %d), want (%d, %d)",
+			used, available, wantUsed, wantAvailable,
+		)
+	}
+}
+
+func TestCapacityReservations(t *testing.T) {
 	capacity, err := New(30)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := capacity.Reserve("a", 10); err != nil {
-		t.Fatal(err)
+	assertCapacity(t, capacity, 0, 30)
+
+	for _, reservation := range []struct {
+		id   string
+		cost uint64
+	}{
+		{"a", 10},
+		{"b", 15},
+	} {
+		if err := capacity.Reserve(reservation.id, reservation.cost); err != nil {
+			t.Fatal(err)
+		}
 	}
 
-	if err := capacity.Reserve("b", 15); err != nil {
-		t.Fatal(err)
-	}
-
-	// Only 5 units left
-	if err := capacity.Reserve("c", 8); !errors.Is(err, ErrInsufficient) {
-		t.Fatalf(
-			"want insufficient capacity: %v",
-			err,
-		)
-	}
-
-	// It cannot make two reservations with the same ID
-	if err := capacity.Reserve("a", 1); !errors.Is(err, ErrDuplicate) {
-		t.Fatalf(
-			"want duplicate reservation: %v",
-			err,
-		)
-	}
-
-	used, available := capacity.Snapshot()
-
-	if used != 25 || available != 5 {
-		t.Fatalf(
-			"used=%d available=%d",
-			used, available,
-		)
-	}
+	assertCapacity(t, capacity, 25, 5)
 
 	if err := capacity.Release("a"); err != nil {
 		t.Fatal(err)
 	}
 
-	// A released reservation cannot be released again
+	assertCapacity(t, capacity, 15, 15)
+
 	if err := capacity.Release("a"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf(
-			"want reservation not found: %v",
+			"Release() = %v, want ErrNotFound",
 			err,
 		)
 	}
 
-	used, available = capacity.Snapshot()
+	assertCapacity(t, capacity, 15, 15)
 
-	if used != 15 || available != 15 {
+	// The identifier can be reused after its reservation is released
+	if err := capacity.Reserve("a", 5); err != nil {
+		t.Fatal(err)
+	}
+
+	assertCapacity(t, capacity, 20, 10)
+}
+
+func TestCapacityValidation(t *testing.T) {
+	if _, err := New(0); err == nil {
+		t.Fatal("New(0) must fail")
+	}
+
+	capacity, err := New(10)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := capacity.Reserve("a", 7); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name string
+		id   string
+		cost uint64
+		want error
+	}{
+		{"duplicate", "a", 1, ErrDuplicate},
+		{"insufficient", "b", 4, ErrInsufficient},
+		{"empty ID", "", 1, ErrInvalidID},
+		{"zero cost", "c", 0, ErrInvalidCost},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := capacity.Reserve(test.id, test.cost); !errors.Is(err, test.want) {
+				t.Fatalf(
+					"Reserve(%q, %d) = %v, want %v",
+					test.id, test.cost, err, test.want,
+				)
+			}
+
+			// No rejection should alter the existing reservations
+			assertCapacity(t, capacity, 7, 3)
+		})
+	}
+}
+
+func TestCapacityUint64Boundary(t *testing.T) {
+	capacity, err := New(math.MaxUint64)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := capacity.Reserve("a", math.MaxUint64-1); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := capacity.Reserve("b", 2); !errors.Is(err, ErrInsufficient) {
 		t.Fatalf(
-			"used=%d available=%d",
-			used, available,
+			"Reserve() = %v, want ErrInsufficient",
+			err,
 		)
 	}
+
+	if err := capacity.Reserve("b", 1); err != nil {
+		t.Fatal(err)
+	}
+
+	assertCapacity(t, capacity, math.MaxUint64, 0)
+
+	for _, id := range []string{"a", "b"} {
+		if err := capacity.Release(id); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	assertCapacity(t, capacity, 0, math.MaxUint64)
 }
 
-func TestInvalid(t *testing.T) {
-	if _, err := New(0); err == nil {
-		t.Fatal("expected invalid capacity error")
-	}
-
-	capacity, _ := New(1)
-
-	if err := capacity.Reserve("", 1); !errors.Is(err, ErrInvalidID) {
-		t.Fatal(err)
-	}
-
-	if err := capacity.Reserve("a", 0); !errors.Is(err, ErrInvalidCost) {
-		t.Fatal(err)
-	}
-
-	if err := capacity.Reserve("a", 2); !errors.Is(err, ErrInsufficient) {
-		t.Fatal(err)
-	}
-}
-
-func TestConcurrentReservations(t *testing.T) {
+func TestCapacityConcurrentReservations(t *testing.T) {
 	capacity, err := New(100)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	var wg sync.WaitGroup
+	var successful atomic.Int64
 
 	for i := range 500 {
 		wg.Add(1)
@@ -102,19 +153,72 @@ func TestConcurrentReservations(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 
-			id := fmt.Sprintf("op-%d", i)
-			_ = capacity.Reserve(id, 1)
+			err := capacity.Reserve(fmt.Sprintf("op-%d", i), 1)
+
+			switch {
+			case err == nil:
+				successful.Add(1)
+			case errors.Is(err, ErrInsufficient):
+			default:
+				t.Errorf(
+					"unexpected reservation error: %v",
+					err,
+				)
+			}
 		}(i)
 	}
 
 	wg.Wait()
 
-	used, available := capacity.Snapshot()
-
-	if used != 100 || available != 0 {
+	if got := successful.Load(); got != 100 {
 		t.Fatalf(
-			"used=%d available=%d, want 100 and 0",
-			used, available,
+			"successful reservations = %d, want 100",
+			got,
 		)
 	}
+
+	assertCapacity(t, capacity, 100, 0)
+}
+
+func TestCapacityConcurrentReleaseOnlyOnce(t *testing.T) {
+	capacity, err := New(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := capacity.Reserve("a", 8); err != nil {
+		t.Fatal(err)
+	}
+
+	var wg sync.WaitGroup
+	var successful atomic.Int64
+
+	for range 100 {
+		wg.Go(func() {
+
+			err := capacity.Release("a")
+
+			switch {
+			case err == nil:
+				successful.Add(1)
+			case errors.Is(err, ErrNotFound):
+			default:
+				t.Errorf(
+					"unexpected release error: %v",
+					err,
+				)
+			}
+		})
+	}
+
+	wg.Wait()
+
+	if got := successful.Load(); got != 1 {
+		t.Fatalf(
+			"successful releases = %d, want 1",
+			got,
+		)
+	}
+
+	assertCapacity(t, capacity, 0, 10)
 }

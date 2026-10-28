@@ -13,8 +13,8 @@ var (
 	ErrNotFound     = errors.New("reservation not found")
 )
 
-// Manages a limited capacity using individually identified reservations, tracking
-// used and available capacity.
+// Capacity manages a limited capacity using individually identified reservations,
+// tracking used and available capacity.
 //
 // It allows reservations to be made and released securely in the face of concurrent
 // access, protecting the internal state using a mutex.
@@ -28,7 +28,7 @@ type Capacity struct {
 	reservations map[string]uint64
 }
 
-// Creates a capacity capacity with the specified maximum capacity.
+// New creates a capacity with the specified maximum capacity.
 func New(max uint64) (*Capacity, error) {
 	if max == 0 {
 		return nil, errors.New("max capacity must be greater than zero")
@@ -40,7 +40,8 @@ func New(max uint64) (*Capacity, error) {
 	}, nil
 }
 
-// Attempts to reserve a portion of the capacity for the specified identifier.
+// Reserve attempts to reserve a portion of the capacity for the specified
+// identifier.
 //
 // The identifier cannot be empty, and the cost must be greater than zero.
 //
@@ -90,7 +91,7 @@ func (capacity *Capacity) Reserve(id string, cost uint64) error {
 	return nil
 }
 
-// Frees up the capacity associated with an existing reservation.
+// Release frees up the capacity associated with an existing reservation.
 //
 // It searches for the reservation by its identifier and if it exists,
 // removes it from the record and deducts its cost from the used capacity.
@@ -118,7 +119,7 @@ func (capacity *Capacity) Release(id string) error {
 	return nil
 }
 
-// Takes a snapshot of the current capacity status.
+// Snapshot takes a snapshot of the current capacity status.
 func (capacity *Capacity) Snapshot() (used, available uint64) {
 	capacity.mutex.Lock()
 	defer capacity.mutex.Unlock()
