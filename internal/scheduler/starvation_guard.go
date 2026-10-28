@@ -6,8 +6,8 @@ import (
 	"sync"
 )
 
-// Implements a scheduler that limits preemptions of the first pending
-// operation to reduce the risk of starvation.
+// StarvationGuard implements a scheduler that limits preemptions of
+// the first pending operation to reduce the risk of starvation.
 //
 // It uses an underlying selector to choose operations when the first
 // one does not have sufficient capacity.
@@ -25,8 +25,8 @@ type StarvationGuard struct {
 	bypasses    uint64
 }
 
-// Creates a scheduler with protection against unlimited bypasses
-// of the first pending operation.
+// NewStarvationGuard creates a scheduler with protection against
+// unlimited bypasses of the first pending operation.
 //
 // It takes a selector that determines the candidate operations and
 // a maximum number of allowed bypasses.
