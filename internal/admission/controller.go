@@ -15,7 +15,7 @@ var (
 	ErrNotActive = errors.New("operation is not active")
 )
 
-// Represents the outcome of an application for admission.
+// Decision represents the outcome of an application for admission.
 type Decision string
 
 const (
@@ -24,14 +24,16 @@ const (
 	Rejected Decision = "rejected"
 )
 
-// Manages the acceptance of operations based on the established
-// concurrency, capacity, and queue capacity limits.
+// Controller manages the acceptance of operations based on
+// the established concurrency, capacity, and queue capacity
+// limits.
 //
-// It keeps track of active, pending, and known operations, preventing
-// duplicate acceptances and managing capacity reserves.
+// It keeps track of active, pending, and known operations,
+// preventing duplicate acceptances and managing capacity
+// reserves.
 //
-// It protects its internal state using a mutex to allow secure access
-// from multiple goroutines.
+// It protects its internal state using a mutex to allow secure
+// access from multiple goroutines.
 type Controller struct {
 	mutex    sync.Mutex
 	limits   core.Limits
@@ -42,23 +44,21 @@ type Controller struct {
 	known    map[string]struct{}
 }
 
-// Creates a queue controller using the FIFO scheduler as the default
-// strategy for selecting pending operations.
+// New creates a queue controller using the FIFO scheduler as the default strategy
+// for selecting pending operations.
 //
-// Delegates the initialization and validation of the controller
-// to NewWithSelector.
+// Delegates the initialization and validation of the controller to NewWithSelector.
 //
-// Returns the initialized controller or an error if the configuration
-// provided is invalid.
+// Returns the initialized controller or an error if the configuration provided is invalid.
 func New(limits core.Limits) (*Controller, error) {
 	return NewWithSelector(limits, scheduler.FIFO{})
 }
 
-// Creates an admission controller with the specified configuration
-// limits and scheduler.
+// NewWithSelector creates an admission controller with the specified
+// configuration limits and scheduler.
 //
-// It validates the specified limits and checks that the scheduler
-// is not nil before initializing the capacity manager.
+// It validates the specified limits and checks that the scheduler is
+// not nil before initializing the capacity manager.
 //
 // The controller is initialized with no active or pending operations,
 // with the full capacity available and empty records.
@@ -90,8 +90,8 @@ func NewWithSelector(limits core.Limits, selector scheduler.Selector) (*Controll
 	}, nil
 }
 
-// Creates an admission controller using the CapacityFit strategy with
-// starvation protection.
+// NewWithStarvationGuard creates an admission controller using the
+// CapacityFit strategy with starvation protection.
 //
 // The maxBypasses parameter sets the limit on the number of bypasses
 // used by the StarvationGuard scheduler to protect pending operations.
@@ -110,29 +110,29 @@ func NewWithStarvationGuard(limits core.Limits, maxBypasses uint64) (*Controller
 	return NewWithSelector(limits, starvation)
 }
 
-// Evaluates a transaction and determines whether it can be executed, placed on
-// hold or rejected.
+// Submit evaluates an operation and determines whether it can begin execution,
+// remain on hold, or must be rejected.
 //
-// The transaction must satisfy the validation constraints, have an unregistered
+// The operation must satisfy the validation constraints, have an unregistered
 // identifier, and not exceed the maximum capacity.
 //
-// A transaction begins immediately when there are no pending transactions,
-// concurrency capacity is available, and sufficient capacity is available.
+// An operation begins immediately when there are no pending operations, concurrency
+// capacity is available, and sufficient capacity is available.
 //
 // If it cannot begin, it is added to the queue provided there is space.
-// Accepted operations are registered to prevent duplicate identifiers.
 //
 // Returns:
 //   - Started if the operation begins immediately.
-//   - Queued if the operation is added to the queue.
+//   - Queued if the operation is added to the waiting queue.
 //   - Rejected if the operation cannot be accepted.
 //
 // It also returns an error if validation fails, the identifier is duplicated,
-// the cost exceeds the maximum capacity or the reservation fails.
+// the cost exceeds the maximum capacity, or the reservation fails.
 //
 // Rejection due to lack of space in the queue returns Rejected and nil.
-//
 // Rejected operations are not logged in the controller.
+//
+// Access to the controller’s state is protected by mutual exclusion.
 func (controller *Controller) Submit(operation core.Operation) (Decision, error) {
 	if err := operation.Validate(); err != nil {
 		return Rejected, err
@@ -151,30 +151,59 @@ func (controller *Controller) Submit(operation core.Operation) (Decision, error)
 
 	_, available := controller.capacity.Snapshot()
 
-	if len(controller.pending) == 0 && len(controller.active) < controller.limits.MaxConcurrent && operation.Cost <= available {
-
-		if err := controller.capacity.Reserve(operation.ID, operation.Cost); err != nil {
-			return Rejected, err
-		}
-
-		controller.active[operation.ID] = operation
-		controller.known[operation.ID] = struct{}{}
-
-		return Started, nil
+	if len(controller.pending) == 0 &&
+		len(controller.active) < controller.limits.MaxConcurrent &&
+		operation.Cost <= available {
+		return controller.start(operation)
 	}
 
 	if len(controller.pending) >= controller.limits.MaxQueueSize {
 		return Rejected, nil
 	}
 
-	controller.pending = append(controller.pending, operation)
-	controller.known[operation.ID] = struct{}{}
-
+	controller.enqueue(operation)
 	return Queued, nil
 }
 
-// Terminates an active operation, releases its reserved capacity  and attempts
-// to promote pending operations to execution.
+// start reserves the necessary capacity and adds an operation to the active
+// operations register.
+//
+// If the reservation is successful, it records the operation's identifier to
+// prevent duplicate admissions.
+//
+// Returns Started and nil if the operation starts successfully or Rejected
+// along with the error if the capacity reservation fails.
+//
+// Must be called with the controller’s mutex acquired.
+func (controller *Controller) start(operation core.Operation) (Decision, error) {
+	if err := controller.capacity.Reserve(operation.ID, operation.Cost); err != nil {
+		return Rejected, err
+	}
+
+	controller.active[operation.ID] = operation
+	controller.known[operation.ID] = struct{}{}
+
+	return Started, nil
+}
+
+// enqueue adds an operation to the end of the queue and registers
+// its identifier among the known operations.
+//
+// It does not check the queue limits or validate the operation, so
+// these checks must be performed beforehand.
+//
+// It must be called with the controller's mutex acquired.
+func (controller *Controller) enqueue(operation core.Operation) {
+	controller.pending = append(
+		controller.pending,
+		operation,
+	)
+
+	controller.known[operation.ID] = struct{}{}
+}
+
+// Finish terminates an active operation, releases its reserved capacity and
+// attempts to promote pending operations to execution.
 //
 // The selection of pending operations is delegated to the configured scheduler,
 // respecting concurrency and capacity limits.
@@ -189,8 +218,8 @@ func (controller *Controller) Finish(id string) ([]core.Operation, error) {
 	return controller.finish(id, true)
 }
 
-// Terminates an active operation and releases its reserved capacity without
-// promoting pending operations.
+// FinishWithoutPromotion terminates an active operation and releases its
+// reserved capacity without promoting pending operations.
 //
 // Removes the operation from the active and known operation records, leaving
 // the waiting queue intact.
@@ -202,23 +231,17 @@ func (controller *Controller) FinishWithoutPromotion(id string) error {
 	return err
 }
 
-// Completes an active operation and optionally controls the promotion of pending
-// operations.
+// finish terminates an active operation and releases its reserved capacity.
 //
-// Releases the reserved capacity and removes the operation from the active and known
-// operation records.
+// Removes the operation from the active and known operation logs. If promote
+// is true, it attempts to promote pending operations using promotePending.
+// Otherwise, it leaves the queue unchanged.
 //
-// If promote is true, it attempts to promote operations using the configured scheduler
-// as long as concurrency capacity exists. If false, it terminates without processing the
-// waiting queue.
+// Returns the promoted operations or an error if the operation is not active,
+// capacity release fails, or an error occurs during promotions.
 //
-// Returns the promoted operations or an error if any of the release, selection or reservation
-// operations fail.
-//
-// If an error occurs during promotions, it preserves the changes made and returns the operations
-// promoted up to that point.
-//
-// All state modifications are performed under mutual exclusion.
+// The operation is performed under mutual exclusion to ensure state consistency
+// in the face of concurrent accesses.
 func (controller *Controller) finish(id string, promote bool) ([]core.Operation, error) {
 	controller.mutex.Lock()
 	defer controller.mutex.Unlock()
@@ -238,10 +261,30 @@ func (controller *Controller) finish(id string, promote bool) ([]core.Operation,
 		return nil, nil
 	}
 
+	return controller.promotePending()
+}
+
+// promotePending attempts to promote pending operations to execution according
+// to the configured scheduler's strategy.
+//
+// As long as there is concurrency capacity and there are pending operations, it
+// consults the scheduler to select the next operation.
+//
+// If the scheduler returns -1, it stops processing without an error. For each
+// selected operation, it reserves its capacity, removes it from the queue and
+// marks it as active.
+//
+// Returns the promoted operations in the order they were selected or an error
+// if the scheduler returns an invalid index or a capacity reservation fails.
+//
+// If an error occurs, it retains the promotions made previously and returns
+// the operations promoted up to that point.
+//
+// Must be called with the controller’s mutex acquired.
+func (controller *Controller) promotePending() ([]core.Operation, error) {
 	var promoted []core.Operation
 
 	for len(controller.pending) > 0 && len(controller.active) < controller.limits.MaxConcurrent {
-
 		_, available := controller.capacity.Snapshot()
 		index := controller.selector.Next(controller.pending, available)
 
@@ -257,16 +300,11 @@ func (controller *Controller) finish(id string, promote bool) ([]core.Operation,
 		}
 
 		operation := controller.pending[index]
-
 		if err := controller.capacity.Reserve(operation.ID, operation.Cost); err != nil {
 			return promoted, err
 		}
 
-		copy(controller.pending[index:], controller.pending[index+1:])
-
-		controller.pending[len(controller.pending)-1] = core.Operation{}
-		controller.pending = controller.pending[:len(controller.pending)-1]
-
+		controller.removePending(index)
 		controller.active[operation.ID] = operation
 		promoted = append(promoted, operation)
 	}
@@ -274,7 +312,22 @@ func (controller *Controller) finish(id string, promote bool) ([]core.Operation,
 	return promoted, nil
 }
 
-// Cancels all pending operations in the controller.
+// removePending removes the operation at the specified index from the queue,
+// preserving the order of the remaining operations.
+//
+// It shifts the subsequent elements one position to the left, clears the last
+// position, and reduces the length of the queue.
+//
+// The index must be valid, and the controller's mutex must be acquired before
+// calling this method.
+func (controller *Controller) removePending(index int) {
+	copy(controller.pending[index:], controller.pending[index+1:])
+	last := len(controller.pending) - 1
+	controller.pending[last] = core.Operation{}
+	controller.pending = controller.pending[:last]
+}
+
+// CancelPending cancels all pending operations in the controller.
 //
 // Returns a copy of the pending operations in the order in which
 // they were stored before cancellation.
@@ -296,8 +349,8 @@ func (controller *Controller) CancelPending() []core.Operation {
 		controller.pending...,
 	)
 
-	for _, op := range cancelled {
-		delete(controller.known, op.ID)
+	for _, operation := range cancelled {
+		delete(controller.known, operation.ID)
 	}
 
 	for i := range controller.pending {
@@ -309,7 +362,7 @@ func (controller *Controller) CancelPending() []core.Operation {
 	return cancelled
 }
 
-// Takes a snapshot of the controller's current state.
+// Snapshot takes a snapshot of the controller's current state.
 //
 // Returns the number of active operations, the number of operations pending
 // in the queue and the total amount of reserved capacity.
@@ -318,7 +371,7 @@ func (controller *Controller) CancelPending() []core.Operation {
 // the returned values.
 //
 // Does not modify the controller's state.
-func (controller *Controller) Snapshot() (active, queued int, used uint64) {
+func (controller *Controller) Snapshot() (active int, queued int, used uint64) {
 	controller.mutex.Lock()
 	defer controller.mutex.Unlock()
 
