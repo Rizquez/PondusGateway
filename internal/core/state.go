@@ -1,6 +1,6 @@
 package core
 
-// Represents the status of an operation throughout its lifecycle.
+// State represents the status of an operation throughout its lifecycle.
 type State string
 
 const (
@@ -11,15 +11,15 @@ const (
 	StateCancelled State = "cancelled"
 )
 
-// Checks whether a transition from the current state
+// CanTransitionTo checks whether a transition from the current state
 // to the specified state is allowed.
 //
 // Allowed transitions are:
 //   - Pending: Running or Cancelled.
 //   - Running: Completed, Failed, or Cancelled.
 //
-// The Completed, Failed and Cancelled states are final and do not
-// allow new transitions.
+// The Completed, Failed and Cancelled states are final and do not allow
+// new transitions.
 //
 // Returns true if the transition is allowed or false otherwise.
 //

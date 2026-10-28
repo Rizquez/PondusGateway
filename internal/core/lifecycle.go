@@ -2,23 +2,23 @@ package core
 
 import "fmt"
 
-// Manages the lifecycle of an operation, maintaining
+// Lifecycle manages the lifecycle of an operation, maintaining
 // its current state and controlling the allowed transitions.
 type Lifecycle struct {
 	state State
 }
 
-// Creates a new lifecycle with the initial status Pending.
+// NewLifecycle creates a new lifecycle with the initial status Pending.
 func NewLifecycle() *Lifecycle {
 	return &Lifecycle{state: StatePending}
 }
 
-// Returns the current state of the lifecycle.
+// State returns the current state of the lifecycle.
 func (lifecycle *Lifecycle) State() State {
 	return lifecycle.state
 }
 
-// Attempts to change the current state to the specified state.
+// TransitionTo attempts to change the current state to the specified state.
 //
 // The transition must comply with the rules defined by CanTransitionTo.
 //

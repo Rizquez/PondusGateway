@@ -2,7 +2,7 @@ package core
 
 import "errors"
 
-// Defines the capacity and consumption constraints
+// Limits defines the capacity and consumption constraints
 // used to control the execution of operations.
 type Limits struct {
 	MaxConcurrent int
@@ -10,7 +10,7 @@ type Limits struct {
 	MaxQueueSize  int
 }
 
-// Checks that the configuration limits comply with
+// Validate checks that the configuration limits comply with
 // the established constraints.
 //
 // The required conditions are:

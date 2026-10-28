@@ -5,12 +5,8 @@ import (
 	"strings"
 )
 
-// Represents an operation associated with a customer,
+// Operation represents an operation associated with a customer,
 // identified by an ID, a type, and a cost.
-//
-// TODO: Define what units Cost represents before implementing
-// capacity control, and determine whether costs will be assigned
-// manually or calculated using a consumption model.
 type Operation struct {
 	ID       string
 	ClientID string
@@ -18,17 +14,17 @@ type Operation struct {
 	Cost     uint64
 }
 
-// Checks that the operation complies with the established
+// Validate checks that the operation complies with the established
 // constraints.
 //
-// The ID, ClientID, and Type fields cannot be empty or contain
-// only spaces; and the Cost field must be greater than zero.
+// The ID, ClientID, and Type fields cannot be empty or contain only
+// spaces; and the Cost field must be greater than zero.
 //
-// Returns an error describing the first constraint violation,
-// or nil if the operation is valid.
+// Returns an error describing the first constraint violation or nil
+// if the operation is valid.
 //
-// It does not modify or normalize the operation’s data,
-// nor does it check for duplicate identifiers.
+// It does not modify or normalize the operation’s data, nor does it
+// check for duplicate identifiers.
 func (operation Operation) Validate() error {
 	switch {
 	case strings.TrimSpace(operation.ID) == "":
