@@ -5,7 +5,7 @@ import (
 	"pondus-gateway/internal/core"
 )
 
-// Defines the contract for executing operations.
+// Executor defines the contract for executing operations.
 //
 // Execute receives the operation to be processed and returns an
 // error when execution fails.
