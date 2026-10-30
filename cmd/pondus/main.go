@@ -37,7 +37,7 @@ func main() {
 //
 // Comparison mode requires a configuration file.
 //
-// When using -config, it cannot be combined with execution parameters
+// When using -client, it cannot be combined with execution parameters
 // other than -compare.
 //
 // In direct execution mode, it creates an admission controller, configures
@@ -72,7 +72,7 @@ func run(args []string, output io.Writer) error {
 		"simulated operation duration",
 	)
 	configPath := flags.String(
-		"config", "",
+		"client", "",
 		"path to YAML configuration file",
 	)
 
@@ -110,14 +110,14 @@ func run(args []string, output io.Writer) error {
 		var mixed bool
 
 		flags.Visit(func(f *flag.Flag) {
-			if f.Name != "config" && f.Name != "compare" {
+			if f.Name != "client" && f.Name != "compare" {
 				mixed = true
 			}
 		})
 
 		if mixed {
 			return fmt.Errorf(
-				"cannot combine -config with other flags",
+				"cannot combine -client with other flags",
 			)
 		}
 
@@ -129,7 +129,7 @@ func run(args []string, output io.Writer) error {
 	}
 
 	if *compare {
-		return fmt.Errorf("-compare requires -config")
+		return fmt.Errorf("-compare requires -client")
 	}
 
 	controller, err := admission.New(core.Limits{

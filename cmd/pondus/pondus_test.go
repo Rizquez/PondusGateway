@@ -110,7 +110,7 @@ func TestRunWithConfig(t *testing.T) {
 
 	var output bytes.Buffer
 
-	if err := run([]string{"-config", path}, &output); err != nil {
+	if err := run([]string{"-client", path}, &output); err != nil {
 		t.Fatal(err)
 	}
 
@@ -128,7 +128,7 @@ func TestRunRejectsMixedFlags(t *testing.T) {
 	var output bytes.Buffer
 
 	err := run([]string{
-		"-config", path,
+		"-client", path,
 		"-operations", "10",
 	}, &output)
 
@@ -437,7 +437,7 @@ func TestRunComparison(t *testing.T) {
 
 	err := run(
 		[]string{
-			"-config", path,
+			"-client", path,
 			"-compare",
 		},
 		&output,
@@ -489,7 +489,7 @@ func TestCompareRequiresConfig(t *testing.T) {
 	err := run([]string{"-compare"}, &output)
 
 	if err == nil {
-		t.Fatal("expected error without -config")
+		t.Fatal("expected error without -client")
 	}
 }
 
@@ -499,7 +499,7 @@ func TestCompareRejectsMixedFlags(t *testing.T) {
 	var output bytes.Buffer
 
 	err := run([]string{
-		"-config", path,
+		"-client", path,
 		"-compare",
 		"-operations", "5",
 	}, &output)
