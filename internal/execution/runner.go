@@ -63,11 +63,14 @@ func (runner *Runner) SetTimeout(duration time.Duration) error {
 	if duration < 0 {
 		return errors.New("negative timeout")
 	}
+
 	runner.mutex.Lock()
 	defer runner.mutex.Unlock()
+
 	if runner.running {
 		return ErrRunnerBusy
 	}
+
 	runner.timeout = duration
 	return nil
 }
@@ -130,6 +133,7 @@ func (runner *Runner) Run(ctx context.Context, operations []core.Operation) (res
 		runner.mutex.Unlock()
 		return nil, ErrRunnerBusy
 	}
+
 	runner.running = true
 	timeout := runner.timeout
 	runner.mutex.Unlock()
@@ -146,6 +150,7 @@ func (runner *Runner) Run(ctx context.Context, operations []core.Operation) (res
 	session := newRunSession(runner, ctx, runCtx, timeout, len(operations))
 	results = session.results
 	session.admit(operations)
+
 	if err := ctx.Err(); err != nil {
 		return results, session.cancelBeforeStart(err)
 	}
@@ -203,13 +208,16 @@ func (session *runSession) admit(operations []core.Operation) {
 	for index, operation := range operations {
 		decision, err := session.runner.controller.Submit(operation)
 		session.results[index] = Result{OperationID: operation.ID, Decision: decision, Err: err}
+
 		if decision == admission.Rejected {
 			continue
 		}
+
 		session.positions[operation.ID] = index
 		session.lifecycles[operation.ID] = core.NewLifecycle()
 		session.results[index].State = core.StatePending
 		session.outstanding++
+
 		if decision == admission.Started {
 			session.started = append(session.started, operation)
 			session.reserved[operation.ID] = struct{}{}
@@ -235,9 +243,11 @@ func (session *runSession) transition(id string, state core.State, reason error)
 	if err := lifecycle.TransitionTo(state); err != nil {
 		return err
 	}
+
 	index := session.positions[id]
 	session.results[index].State = lifecycle.State()
 	session.results[index].Err = reason
+
 	return nil
 }
 
@@ -275,15 +285,19 @@ func (session *runSession) cancelBeforeStart(reason error) error {
 	if err := session.cancelPending(reason); err != nil {
 		return err
 	}
+
 	for _, operation := range session.started {
 		if err := session.transition(operation.ID, core.StateCancelled, reason); err != nil {
 			return err
 		}
+
 		if err := session.runner.controller.FinishWithoutPromotion(operation.ID); err != nil {
 			return err
 		}
+
 		session.outstanding--
 	}
+
 	return nil
 }
 
@@ -303,8 +317,16 @@ func (session *runSession) launch(operation core.Operation) error {
 	if err := session.transition(operation.ID, core.StateRunning, session.results[session.positions[operation.ID]].Err); err != nil {
 		return err
 	}
+
 	session.inflight[operation.ID] = struct{}{}
-	go func() { session.finished <- completion{id: operation.ID, err: session.execute(operation)} }()
+
+	go func() {
+		session.finished <- completion{
+			id:  operation.ID,
+			err: session.execute(operation),
+		}
+	}()
+
 	return nil
 }
 
@@ -323,15 +345,19 @@ func (session *runSession) launch(operation core.Operation) error {
 func (session *runSession) execute(operation core.Operation) (err error) {
 	workCtx := session.runCtx
 	cancel := func() {}
+
 	if session.timeout > 0 {
 		workCtx, cancel = context.WithTimeout(session.runCtx, session.timeout)
 	}
+
 	defer cancel()
+
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = fmt.Errorf("executor panic: %v", recovered)
 		}
 	}()
+
 	return session.runner.executor.Execute(workCtx, operation)
 }
 
@@ -346,9 +372,11 @@ func completionState(err error) core.State {
 	if errors.Is(err, context.Canceled) {
 		return core.StateCancelled
 	}
+
 	if err != nil {
 		return core.StateFailed
 	}
+
 	return core.StateCompleted
 }
 
@@ -368,8 +396,10 @@ func (session *runSession) observeCancellation() error {
 	if session.cancelled || session.ctx.Err() == nil {
 		return nil
 	}
+
 	session.cancelled = true
 	session.doneCh = nil
+
 	return session.cancelPending(session.ctx.Err())
 }
 
@@ -389,9 +419,11 @@ func (session *runSession) wait() error {
 		if err := session.observeCancellation(); err != nil {
 			return err
 		}
+
 		if session.outstanding == 0 {
 			break
 		}
+
 		select {
 		case <-session.doneCh:
 			if err := session.observeCancellation(); err != nil {
@@ -403,6 +435,7 @@ func (session *runSession) wait() error {
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -430,25 +463,31 @@ func (session *runSession) complete(done completion) error {
 	if err := session.transition(done.id, completionState(done.err), done.err); err != nil {
 		return err
 	}
+
 	if err := session.observeCancellation(); err != nil {
 		return err
 	}
+
 	if session.cancelled {
 		if err := session.runner.controller.FinishWithoutPromotion(done.id); err != nil {
 			return err
 		}
+
 		delete(session.reserved, done.id)
 	} else {
 		promoted, err := session.runner.controller.Finish(done.id)
 		if err == nil {
 			delete(session.reserved, done.id)
 		}
+
 		for _, operation := range promoted {
 			session.reserved[operation.ID] = struct{}{}
 		}
+
 		if err != nil {
 			return err
 		}
+
 		for _, operation := range promoted {
 			if err := session.launch(operation); err != nil {
 				return err
@@ -456,6 +495,7 @@ func (session *runSession) complete(done completion) error {
 		}
 	}
 	session.outstanding--
+
 	if session.outstanding > 0 && !session.cancelled {
 		active, queued, _ := session.runner.controller.Snapshot()
 		if active == 0 && queued > 0 {
@@ -465,6 +505,7 @@ func (session *runSession) complete(done completion) error {
 			return ErrNoProgress
 		}
 	}
+
 	return nil
 }
 
@@ -491,6 +532,7 @@ func (session *runSession) cleanup(runErr error, cancelRun context.CancelFunc) e
 	for _, operation := range session.runner.controller.CancelPending() {
 		index := session.positions[operation.ID]
 		session.results[index].Err = runErr
+
 		if lifecycle := session.lifecycles[operation.ID]; lifecycle != nil {
 			if err := lifecycle.TransitionTo(core.StateCancelled); err != nil {
 				runErr = errors.Join(runErr, err)
@@ -498,29 +540,36 @@ func (session *runSession) cleanup(runErr error, cancelRun context.CancelFunc) e
 			session.results[index].State = lifecycle.State()
 		}
 	}
+
 	for len(session.inflight) > 0 {
 		done := <-session.finished
 		if _, exists := session.inflight[done.id]; !exists {
 			continue
 		}
+
 		delete(session.inflight, done.id)
 		index := session.positions[done.id]
 		session.results[index].Err = done.err
 		lifecycle := session.lifecycles[done.id]
+
 		if err := lifecycle.TransitionTo(completionState(done.err)); err != nil {
 			runErr = errors.Join(runErr, err)
 		}
+
 		session.results[index].State = lifecycle.State()
 	}
+
 	for id := range session.reserved {
 		if err := session.runner.controller.FinishWithoutPromotion(id); err != nil && !errors.Is(err, admission.ErrNotActive) {
 			runErr = errors.Join(runErr, err)
 		}
+
 		lifecycle := session.lifecycles[id]
 		if lifecycle != nil && lifecycle.State() == core.StatePending {
 			if err := lifecycle.TransitionTo(core.StateCancelled); err != nil {
 				runErr = errors.Join(runErr, err)
 			}
+
 			index := session.positions[id]
 			session.results[index].State = lifecycle.State()
 			session.results[index].Err = runErr

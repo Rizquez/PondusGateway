@@ -11,56 +11,91 @@ import (
 )
 
 func TestSummarize(t *testing.T) {
-	results := []execution.Result{
+	tests := []struct {
+		name     string
+		results  []execution.Result
+		duration time.Duration
+		want     Report
+	}{
 		{
-			Decision: admission.Started,
-			State:    core.StateCompleted,
+			name: "mixed results",
+			results: []execution.Result{
+				{Decision: admission.Started, State: core.StateCompleted},
+				{Decision: admission.Queued, State: core.StateCompleted},
+				{Decision: admission.Started, State: core.StateFailed},
+				{Decision: admission.Started, State: core.StateCancelled},
+				{Decision: admission.Rejected, State: core.StateFailed},
+			},
+			duration: 2 * time.Second,
+			want: Report{
+				Total: 5, Completed: 2, Failed: 1,
+				Cancelled: 1, Rejected: 1, Duration: 2 * time.Second,
+			},
 		},
 		{
-			Decision: admission.Queued,
-			State:    core.StateCompleted,
+			name: "no transactions",
+			want: Report{},
 		},
 		{
-			Decision: admission.Started,
-			State:    core.StateFailed,
-		},
-		{
-			Decision: admission.Started,
-			State:    core.StateCancelled,
-		},
-		{
-			Decision: admission.Rejected,
+			name: "non-terminal states are not counted",
+			results: []execution.Result{
+				{Decision: admission.Started, State: core.StateRunning},
+				{Decision: admission.Queued, State: core.StatePending},
+			},
+			want: Report{Total: 2},
 		},
 	}
 
-	report := Summarize(results, 2*time.Second)
-
-	if report.Total != 5 ||
-		report.Completed != 2 ||
-		report.Failed != 1 ||
-		report.Cancelled != 1 ||
-		report.Rejected != 1 ||
-		report.Duration != 2*time.Second {
-
-		t.Fatalf("unexpected report: %+v", report)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := Summarize(test.results, test.duration); got != test.want {
+				t.Fatalf(
+					"Summarize() = %+v; want %+v",
+					got, test.want,
+				)
+			}
+		})
 	}
 }
 
 func TestSampler(t *testing.T) {
 	var sampler Sampler
 
+	// 8 units for 1 second, 4 for 1 second, and 0 for 1 second
 	sampler.Observe(8, 0)
 	sampler.Observe(4, time.Second)
 	sampler.Observe(0, time.Second)
 	sampler.Observe(0, time.Second)
 
 	if got := sampler.PeakUsed(); got != 8 {
-		t.Fatalf("peak = %d, want 8", got)
+		t.Fatalf("PeakUsed() = %d; want 8", got)
 	}
+	if got := sampler.AverageUtilization(10); math.Abs(got-40) > 1e-9 {
+		t.Fatalf("AverageUtilization(10) = %.6f; want 40", got)
+	}
+}
 
-	got := sampler.AverageUtilization(10)
+func TestSamplerIgnoresNegativeInterval(t *testing.T) {
+	var sampler Sampler
+	sampler.Observe(5, 0)
+	sampler.Observe(9, -time.Second) // Neither the peak nor lastUsed should change
+	sampler.Observe(0, time.Second)
 
-	if math.Abs(got-40) > 0.001 {
-		t.Fatalf("utilization = %.2f, want 40", got)
+	if got := sampler.PeakUsed(); got != 5 {
+		t.Fatalf("PeakUsed() = %d; want 5", got)
+	}
+	if got := sampler.AverageUtilization(10); math.Abs(got-50) > 1e-9 {
+		t.Fatalf("AverageUtilization(10) = %.6f; want 50", got)
+	}
+}
+
+func TestSamplerZeroDenominator(t *testing.T) {
+	var sampler Sampler
+	if got := sampler.AverageUtilization(10); got != 0 {
+		t.Fatalf("without samples: got %.6f; want 0", got)
+	}
+	sampler.Observe(4, time.Second)
+	if got := sampler.AverageUtilization(0); got != 0 {
+		t.Fatalf("zero capacity: got %.6f; want 0", got)
 	}
 }
