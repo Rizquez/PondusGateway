@@ -2,7 +2,7 @@
 
 Pondus Gateway is a concurrent workload admission and scheduling engine written in Go.
 
-It explores how different scheduling strategies behave under limited execution capacity, variable operation costs, and multiple clients.
+It explores how different scheduling strategies behave under limited execution capacity, variable operation costs and multiple clients.
 
 ## 📍 Goals
 
@@ -20,7 +20,7 @@ Pondus Gateway focuses on three priorities:
 | v0.2.0    | Capacity Control | Protect the system from overload                        |
 | v0.3.0    | Scheduling       | Decide which operations to execute                      |
 | v0.4.0    | Execution        | Execute operations concurrently                         |
-| v0.5.0    | MVP              | Simulate workloads, measure results, and use the engine |
+| v0.5.0    | MVP              | Simulate workloads, measure results and use the engine |
 
 ### After the MVP
 
@@ -164,4 +164,4 @@ Pondus Gateway is an experimental workload engine.
 
 ## 🔒 License
 
-This project is licensed under the MIT license, which allows its use, distribution, and modification under the conditions specified in the `LICENSE` file.
+This project is licensed under the MIT license, which allows its use, distribution and modification under the conditions specified in the `LICENSE` file.
