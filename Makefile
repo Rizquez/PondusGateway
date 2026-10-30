@@ -9,10 +9,10 @@ default:
 	go run ./cmd/pondus -concurrency 4 -capacity 10 -operations 20 -duration 100ms
 
 basic-client:
-	go run ./cmd/pondus -config configs/basic.yaml
+	go run ./cmd/pondus -client clients/basic.yaml
 
 multi-client:
-	go run ./cmd/pondus -config configs/multi-client.yaml
+	go run ./cmd/pondus -client clients/multiple.yaml
 
 compare:
-	go run ./cmd/pondus -config configs/multi-client.yaml -compare
+	go run ./cmd/pondus -client clients/multiple.yaml -compare
