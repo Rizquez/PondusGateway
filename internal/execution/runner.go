@@ -88,7 +88,7 @@ type completion struct {
 //
 // Only the goroutine that executes Run modifies the session's maps and
 // results.
-
+//
 // The executing goroutines report their completions via the finished channel.
 type runSession struct {
 	runner      *Runner
