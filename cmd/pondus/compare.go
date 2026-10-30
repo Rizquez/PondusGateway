@@ -6,30 +6,46 @@ import (
 	"io"
 	"time"
 
-	"pondus-gateway/internal/admission"
-	"pondus-gateway/internal/core"
-	"pondus-gateway/internal/execution"
 	"pondus-gateway/internal/observability"
 )
 
+// comparisonResult stores the results of a simulation
+// run using a specific planning strategy.
+//
+// Associates the planner's name with the metrics report
+// generated during its execution.
 type comparisonResult struct {
 	Scheduler string
 	Report    observability.Report
 }
 
+// runComparison compares the available scheduling strategies using
+// the same configuration and the same batch of operations.
+//
+// It loads and validates the configuration, generates the batch of
+// operations and first verifies that all operations can be accommodated.
+//
+// It sequentially executes the FIFO, CapacityFit and CapacityFit with
+// starvation protection strategies; each strategy uses its own controller
+// and Runner.
+//
+// For the protected strategy, it uses the configured lead time limit or
+// the default value of two if it is zero.
+//
+// Collects metrics from each simulation and displays a comparison table
+// using printComparison.
+//
+// Returns an error if the configuration, admission or execution of any of
+// the strategies fails; if all simulations complete successfully, returns nil.
 func runComparison(path string, output io.Writer) error {
-	config, err := loadConfig(path)
+	file, err := loadConfig(path)
 	if err != nil {
 		return err
 	}
 
-	batch := buildBatch(config)
+	batch := buildBatch(file)
 
-	limits := core.Limits{
-		MaxConcurrent: config.Limits.MaxConcurrent,
-		MaxCapacity:   config.Limits.MaxCapacity,
-		MaxQueueSize:  config.Limits.MaxQueueSize,
-	}
+	limits := file.limits()
 
 	if err := validateBatchAdmission(limits, batch); err != nil {
 		return err
@@ -41,7 +57,7 @@ func runComparison(path string, output io.Writer) error {
 		"capacity-fit-guarded",
 	}
 
-	maxBypasses := config.Scheduler.MaxBypasses
+	maxBypasses := file.Scheduler.MaxBypasses
 	if maxBypasses == 0 {
 		maxBypasses = 2
 	}
@@ -53,7 +69,7 @@ func runComparison(path string, output io.Writer) error {
 	)
 
 	for _, strategy := range strategies {
-		scenario := config
+		scenario := file
 		scenario.Scheduler.Type = strategy
 		scenario.Scheduler.MaxBypasses = 0
 
@@ -61,37 +77,9 @@ func runComparison(path string, output io.Writer) error {
 			scenario.Scheduler.MaxBypasses = maxBypasses
 		}
 
-		selector, err := buildSelector(scenario)
+		controller, runner, err := newConfiguredRunner(scenario)
 		if err != nil {
-			return fmt.Errorf(
-				"scheduler %s: %w",
-				strategy, err,
-			)
-		}
-
-		controller, err := admission.NewWithSelector(
-			limits,
-			selector,
-		)
-		if err != nil {
-			return err
-		}
-
-		duration, err := time.ParseDuration(
-			config.Executor.Duration,
-		)
-		if err != nil {
-			return err
-		}
-
-		runner, err := execution.New(
-			controller,
-			execution.SleepExecutor{
-				Duration: duration,
-			},
-		)
-		if err != nil {
-			return err
+			return fmt.Errorf("scheduler %s: %w", strategy, err)
 		}
 
 		_, report, err := measureRun(
@@ -121,10 +109,16 @@ func runComparison(path string, output io.Writer) error {
 	return nil
 }
 
-func printComparison(
-	output io.Writer,
-	comparisons []comparisonResult,
-) {
+// printComparison prints a comparison of the metrics obtained during the execution of
+// different planning strategies.
+//
+// It presents the results in two tables:
+//   - Execution results: completed, failed, rejected operations and total duration.
+//   - Resource utilization: maximum reserved capacity and average utilization percentage.
+//
+// Durations are rounded to the microsecond, and utilization percentages are displayed to
+// two decimal places.
+func printComparison(output io.Writer, comparisons []comparisonResult) {
 	fmt.Fprintln(output, "Pondus Gateway | Scheduler comparison")
 	fmt.Fprintln(output)
 
@@ -139,16 +133,16 @@ func printComparison(
 	)
 
 	for _, item := range comparisons {
-		r := item.Report
+		report := item.Report
 
 		fmt.Fprintf(
 			output,
 			"%-22s %9d %9d %9d %11s\n",
 			item.Scheduler,
-			r.Completed,
-			r.Failed,
-			r.Rejected,
-			r.Duration.Round(time.Microsecond),
+			report.Completed,
+			report.Failed,
+			report.Rejected,
+			report.Duration.Round(time.Microsecond),
 		)
 	}
 
