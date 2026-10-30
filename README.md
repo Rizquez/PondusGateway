@@ -103,20 +103,17 @@ The CLI reports:
 
 ```
 pondus-gateway
+├── clients
+│   ├── basic.yaml
+│   └── multiple.yaml
 ├── cmd
 │   ├── pondus
-│   │   ├── compare_test.go
 │   │   ├── compare.go
-│   │   ├── config_test.go
 │   │   ├── config.go
-│   │   ├── main_tes.go
 │   │   ├── main.go
 │   │   ├── measure.go
-│   │   └── workload_test.go
+│   │   └── pondus_test.go
 │   └── .gitkeep
-├── configs
-│   ├── basic.yaml
-│   └── multi-client.yaml
 ├── internal
 │   ├── admission
 │   │   ├── controller_test.go
