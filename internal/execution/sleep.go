@@ -9,28 +9,16 @@ import (
 
 var ErrInvalidDuration = errors.New("duration must be greater than zero")
 
-// SleepExecutor implements an executor that simulates
-// a workload by waiting for a configurable duration.
+// SleepExecutor simulates a workload using a configurable wait.
 type SleepExecutor struct {
 	Duration time.Duration
 }
 
-// Execute simulates the execution of an operation by waiting for the duration
-// specified in Duration.
+// Execute waits for the configured duration without using the operation's
+// data.
 //
-// The configured duration must be greater than zero.
-//
-// The received operation does not affect the executor's behavior.
-//
-// Checks the context's state before starting the wait and uses a timer to control
-// its duration.
-//
-// Returns:
-//   - ErrInvalidDuration if the duration is less than or equal to zero.
-//   - The context’s error if cancellation or expiration is detected.
-//   - nil if the timer expires before cancellation is detected.
-//
-// The wait can be interrupted by the context without the full duration having elapsed.
+// The wait can be interrupted by the context. If the cancellation
+// coincides with the timer expiring, its priority is not guaranteed.
 func (executor SleepExecutor) Execute(ctx context.Context, _ core.Operation) error {
 	if executor.Duration <= 0 {
 		return ErrInvalidDuration

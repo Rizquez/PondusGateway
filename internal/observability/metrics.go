@@ -1,17 +1,14 @@
 package observability
 
 import (
-	"time"
-
 	"pondus-gateway/internal/admission"
 	"pondus-gateway/internal/core"
 	"pondus-gateway/internal/execution"
+	"time"
 )
 
-// The report contains aggregated metrics for a batch of operations.
-//
-// It includes the total number of operations, their final results,
-// the duration of the batch, and capacity utilization metrics.
+// This report groups the performance and capacity utilization metrics
+// for a set of operations.
 type Report struct {
 	Total              int
 	Completed          int
@@ -23,11 +20,10 @@ type Report struct {
 	AverageUtilization float64
 }
 
-// Sampler collects samples of capacity utilization
-// to calculate peak consumption and average utilization.
+// Sampler collects capacity samples to calculate the observed
+// maximum and the time-weighted average utilization.
 //
-// It maintains the most recent observed consumption, the
-// cumulative time and the time-weighted sum of consumption.
+// It does not include synchronization for concurrent accesses.
 type Sampler struct {
 	peakUsed     uint64
 	weightedUsed float64
@@ -35,25 +31,17 @@ type Sampler struct {
 	lastUsed     uint64
 }
 
-// The observation records a new instance of capacity utilization.
+// Observe records the current consumption and weights the previous
+// consumption by the time elapsed since the last observation.
 //
-// The parameter used represents the capacity utilized in the new observation,
-// while elapsed indicates the time that has elapsed since the previous observation.
-//
-// It accumulates the previous consumption weighted by the elapsed time, updates the
-// latest observed consumption, and records the maximum reached.
-//
-// If elapsed is negative, it ignores the observation without changing  the Sampler’s
-// state.
-//
-// The first observation starts with a previous consumption equal to zero.
+// Negative intervals are ignored. The first observation
+// assumes a previous consumption of zero.
 func (sampler *Sampler) Observe(used uint64, elapsed time.Duration) {
 	if elapsed < 0 {
 		return
 	}
 
-	sampler.weightedUsed += float64(sampler.lastUsed) *
-		elapsed.Seconds()
+	sampler.weightedUsed += float64(sampler.lastUsed) * elapsed.Seconds()
 
 	sampler.elapsed += elapsed
 	sampler.lastUsed = used
@@ -63,49 +51,23 @@ func (sampler *Sampler) Observe(used uint64, elapsed time.Duration) {
 	}
 }
 
-// PeakUsed returns the maximum capacity recorded
-// during the observations.
-//
-// Returns zero if no positive capacity utilization
-// has been recorded.
+// PeakUsed returns the maximum observed capacity.
 func (sampler *Sampler) PeakUsed() uint64 {
 	return sampler.peakUsed
 }
 
-// AverageUtilization calculates the average utilization percentage
-// relative to the maximum capacity provided.
-//
-// It uses the time-weighted cumulative consumption and the total
-// recorded duration to calculate the average.
-//
-// The result is expressed as a percentage and is not limited to the
-// range between zero and one hundred.
-//
-// Returns zero if the provided capacity is zero or if no observation
-// time has been accumulated.
+// AverageUtilization returns the average utilization as a percentage
+// of the allocated capacity, without capping the result at 100%.
 func (sampler *Sampler) AverageUtilization(capacity uint64) float64 {
 	if capacity == 0 || sampler.elapsed == 0 {
 		return 0
 	}
 
-	return 100 * sampler.weightedUsed /
-		(float64(capacity) * sampler.elapsed.Seconds())
+	return 100 * sampler.weightedUsed / (float64(capacity) * sampler.elapsed.Seconds())
 }
 
-// Summarize generates a report based on the execution results and the total
-// duration provided.
-//
-// It counts the completed, failed, canceled, and rejected operations.
-//
-// Rejected operations are counted regardless of their status.
-//
-// Accepted operations whose status is not Completed, Failed or Cancelled are
-// not included in any of these counters.
-//
-// Returns a Report with the calculated counters and the specified duration.
-//
-// The PeakUsed and AverageUtilization metrics remain at zero, since they are
-// not calculated based on the received results.
+// Summarize aggregates the execution results, taking into account rejections
+// regardless of the final status of the operations.
 func Summarize(results []execution.Result, duration time.Duration) Report {
 	report := Report{
 		Total:    len(results),

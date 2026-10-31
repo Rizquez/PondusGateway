@@ -9,34 +9,20 @@ import (
 	"pondus-gateway/internal/observability"
 )
 
-// comparisonResult stores the results of a simulation
-// run using a specific planning strategy.
-//
-// Associates the planner's name with the metrics report
-// generated during its execution.
 type comparisonResult struct {
 	Scheduler string
 	Report    observability.Report
 }
 
-// runComparison compares the available scheduling strategies using
-// the same configuration and the same batch of operations.
+// runComparison compares planning strategies using the same
+// set of operations and the same admission limits.
 //
-// It loads and validates the configuration, generates the batch of
-// operations and first verifies that all operations can be accommodated.
+// Each strategy is executed using a separate controller.
+// StarvationGuard uses a maximum of two advances when no
+// other value has been configured.
 //
-// It sequentially executes the FIFO, CapacityFit and CapacityFit with
-// starvation protection strategies; each strategy uses its own controller
-// and Runner.
-//
-// For the protected strategy, it uses the configured lead time limit or
-// the default value of two if it is zero.
-//
-// Collects metrics from each simulation and displays a comparison table
-// using printComparison.
-//
-// Returns an error if the configuration, admission or execution of any of
-// the strategies fails; if all simulations complete successfully, returns nil.
+// The comparison is terminated if any simulation returns an
+// error.
 func runComparison(path string, output io.Writer) error {
 	file, err := loadConfig(path)
 	if err != nil {
@@ -109,15 +95,6 @@ func runComparison(path string, output io.Writer) error {
 	return nil
 }
 
-// printComparison prints a comparison of the metrics obtained during the execution of
-// different planning strategies.
-//
-// It presents the results in two tables:
-//   - Execution results: completed, failed, rejected operations and total duration.
-//   - Resource utilization: maximum reserved capacity and average utilization percentage.
-//
-// Durations are rounded to the microsecond, and utilization percentages are displayed to
-// two decimal places.
 func printComparison(output io.Writer, comparisons []comparisonResult) {
 	fmt.Fprintln(output, "Pondus Gateway | Scheduler comparison")
 	fmt.Fprintln(output)

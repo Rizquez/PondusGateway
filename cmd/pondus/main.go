@@ -13,10 +13,6 @@ import (
 	"pondus-gateway/internal/execution"
 )
 
-// main defines the entry point for the Pondus Gateway application.
-//
-// Runs the application using command-line arguments and redirects
-// standard output to the terminal.
 func main() {
 	if err := run(os.Args[1:], os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -24,33 +20,11 @@ func main() {
 	}
 }
 
-// run processes the command-line arguments and run Pondus Gateway
-// according to the provided configuration.
+// run processes the arguments and runs the simulation in direct mode,
+// using YAML configuration or by comparing planning strategies.
 //
-// Defines and validates the concurrency, capacity, number of operations
-// and duration parameters for the simulated execution.
-//
-// Supports three execution modes:
-//   - Execution using the parameters provided via the command line.
-//   - Execution using a YAML configuration file.
-//   - Comparison of scheduling strategies using a YAML file.
-//
-// Comparison mode requires a configuration file.
-//
-// When using -client, it cannot be combined with execution parameters
-// other than -compare.
-//
-// In direct execution mode, it creates an admission controller, configures
-// a queue executor, generates the batch of operations and runs the corresponding
-// measurement.
-//
-// Writes the execution report to output and, when the measurement completes
-// without error, displays the individual results of the operations.
-//
-// Returns an error if the arguments are invalid or if any of the configuration,
-// execution or measurement stages fail.
-//
-// Returns nil if the procedure completes successfully.
+// Comparison mode requires the -client option. This option cannot be
+// combined with execution parameters other than -compare.
 func run(args []string, output io.Writer) error {
 	flags := flag.NewFlagSet("pondus", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -116,9 +90,7 @@ func run(args []string, output io.Writer) error {
 		})
 
 		if mixed {
-			return fmt.Errorf(
-				"cannot combine -client with other flags",
-			)
+			return fmt.Errorf("cannot combine -client with other flags")
 		}
 
 		if *compare {
@@ -151,7 +123,7 @@ func run(args []string, output io.Writer) error {
 		return err
 	}
 
-	// Reuse the same YAML mode generation for a single client
+	// Reuses operation generation from YAML mode
 	var config FileConfig
 	config.Operations.Count = *operations
 	batch := buildBatch(config)

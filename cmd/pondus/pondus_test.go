@@ -65,7 +65,10 @@ func TestLoadConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if file.Limits.MaxConcurrent != 2 || file.Limits.MaxCapacity != 2 || file.Operations.Count != 5 || file.Scheduler.Type != "fifo" {
+	if file.Limits.MaxConcurrent != 2 ||
+		file.Limits.MaxCapacity != 2 ||
+		file.Operations.Count != 5 ||
+		file.Scheduler.Type != "fifo" {
 		t.Fatalf("unexpected file: %+v", file)
 	}
 }
@@ -132,16 +135,26 @@ func TestBuildBatchMultipleClients(t *testing.T) {
 		t.Fatalf("operations=%d, want %d", len(batch), len(wantClients))
 	}
 
-	for i, operation := range batch {
-		if operation.ID != fmt.Sprintf("op-%d", i+1) || operation.ClientID != wantClients[i] || operation.Cost != wantCosts[i] {
-			t.Fatalf("operation %d: %+v", i, operation)
+	for index, operation := range batch {
+		if operation.ID != fmt.Sprintf("op-%d", index+1) ||
+			operation.ClientID != wantClients[index] ||
+			operation.Cost != wantCosts[index] {
+			t.Fatalf(
+				"operation %d: %+v",
+				index, operation,
+			)
 		}
 	}
 }
 
 func TestRun(t *testing.T) {
 	var output bytes.Buffer
-	if err := run([]string{"-concurrency=2", "-capacity=2", "-operations=4", "-duration=1ms"}, &output); err != nil {
+	if err := run([]string{
+		"-concurrency=2",
+		"-capacity=2",
+		"-operations=4",
+		"-duration=1ms",
+	}, &output); err != nil {
 		t.Fatal(err)
 	}
 
@@ -153,14 +166,24 @@ func TestRun(t *testing.T) {
 		}
 	}
 
-	for _, expected := range []string{"state=completed", "Completed: 4", "Average reserved utilization"} {
+	for _, expected := range []string{
+		"state=completed",
+		"Completed: 4",
+		"Average reserved utilization",
+	} {
 		if !strings.Contains(text, expected) {
-			t.Errorf("missing %q in output:\n%s", expected, text)
+			t.Errorf(
+				"missing %q in output:\n%s",
+				expected, text,
+			)
 		}
 	}
 
 	if got := strings.Count(text, "state=completed"); got != 4 {
-		t.Fatalf("completed=%d, want 4\n%s", got, text)
+		t.Fatalf(
+			"completed=%d, want 4\n%s",
+			got, text,
+		)
 	}
 }
 
@@ -173,7 +196,10 @@ func TestRunWithConfig(t *testing.T) {
 	}
 
 	if got := strings.Count(output.String(), "state=completed"); got != 5 {
-		t.Fatalf("completed=%d, want 5\n%s", got, output.String())
+		t.Fatalf(
+			"completed=%d, want 5\n%s",
+			got, output.String(),
+		)
 	}
 }
 
@@ -193,7 +219,10 @@ func TestRunWithSchedulerStrategies(t *testing.T) {
 			}
 
 			if got := strings.Count(output.String(), "state=completed"); got != 5 {
-				t.Fatalf("completed=%d, want 5\n%s", got, output.String())
+				t.Fatalf(
+					"completed=%d, want 5\n%s",
+					got, output.String(),
+				)
 			}
 		})
 	}
@@ -206,12 +235,18 @@ func TestRunMultipleClients(t *testing.T) {
 	}
 
 	if got := strings.Count(output.String(), "state=completed"); got != 6 {
-		t.Fatalf("completed=%d, want 6\n%s", got, output.String())
+		t.Fatalf(
+			"completed=%d, want 6\n%s",
+			got, output.String(),
+		)
 	}
 
 	for _, client := range []string{"a", "b", "c"} {
 		if got := strings.Count(output.String(), "client="+client+" "); got != 2 {
-			t.Errorf("client %s: operations=%d, want 2", client, got)
+			t.Errorf(
+				"client %s: operations=%d, want 2",
+				client, got,
+			)
 		}
 	}
 }
@@ -244,7 +279,11 @@ func TestRunInvalidArguments(t *testing.T) {
 
 func TestRunComparison(t *testing.T) {
 	var output bytes.Buffer
-	if err := run([]string{"-client", writeTestConfig(t, validYAML), "-compare"}, &output); err != nil {
+	if err := run([]string{
+		"-client",
+		writeTestConfig(t, validYAML),
+		"-compare",
+	}, &output); err != nil {
 		t.Fatal(err)
 	}
 
@@ -253,7 +292,11 @@ func TestRunComparison(t *testing.T) {
 		t.Fatalf("missing comparison header:\n%s", text)
 	}
 
-	for _, strategy := range []string{"fifo", "capacity-fit", "capacity-fit-guarded"} {
+	for _, strategy := range []string{
+		"fifo",
+		"capacity-fit",
+		"capacity-fit-guarded",
+	} {
 		rows := 0
 		foundResults := false
 		for line := range strings.SplitSeq(text, "\n") {
@@ -267,13 +310,19 @@ func TestRunComparison(t *testing.T) {
 			if len(fields) == 5 {
 				foundResults = true
 				if fields[1] != "5" || fields[2] != "0" || fields[3] != "0" {
-					t.Errorf("unexpected metrics for %s: %s", strategy, line)
+					t.Errorf(
+						"unexpected metrics for %s: %s",
+						strategy, line,
+					)
 				}
 			}
 		}
 
 		if rows != 2 || !foundResults {
-			t.Errorf("strategy %s: rows=%d, results=%v", strategy, rows, foundResults)
+			t.Errorf(
+				"strategy %s: rows=%d, results=%v",
+				strategy, rows, foundResults,
+			)
 		}
 	}
 }

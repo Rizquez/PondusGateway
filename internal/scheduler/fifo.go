@@ -2,20 +2,22 @@ package scheduler
 
 import "pondus-gateway/internal/core"
 
-// Selector determines which pending operation can begin
-// using the available capacity.
+// Selector defines the contract for selecting pending transactions.
+//
+// Next must return a valid index or -1 if none can be selected.
 type Selector interface {
 	Next(pending []core.Operation, available uint64) int
 }
 
-// FIFO implements first-in, first-out selection.
+// FIFO enforces a strict first-in, first-out policy,
+// preventing operations from cutting in line even if
+// there is capacity for other operations.
 type FIFO struct{}
 
-// Next takes the queue of operations and the available capacity.
+// Next selects the first operation if there is sufficient capacity.
 //
-// Returns:
-//   - 0: Selects the first operation.
-//   - -1: No operation can be selected under this policy.
+// Returns -1 if the queue is empty or the first operation cannot be
+// executed.
 func (FIFO) Next(pending []core.Operation, available uint64) int {
 	if len(pending) == 0 {
 		return -1

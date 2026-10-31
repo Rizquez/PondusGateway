@@ -6,17 +6,12 @@ import (
 	"sync"
 )
 
-// StarvationGuard implements a scheduler that limits preemptions of
-// the first pending operation to reduce the risk of starvation.
+// StarvationGuard limits the number of times the first pending
+// operation can be preempted to reduce the risk of starvation.
+// It is safe under concurrent access.
 //
-// It uses an underlying selector to choose operations when the first
-// one does not have sufficient capacity.
-//
-// It maintains a headway counter for the first pending operation and
-// blocks new selections when the set limit is reached.
-//
-// It protects its internal state using a mutex to allow safe access
-// from multiple goroutines.
+// It does not guarantee a maximum wait time: the protected operation
+// still depends on sufficient capacity becoming available.
 type StarvationGuard struct {
 	mutex       sync.Mutex
 	selector    Selector
@@ -25,17 +20,9 @@ type StarvationGuard struct {
 	bypasses    uint64
 }
 
-// NewStarvationGuard creates a scheduler with protection against
-// unlimited bypasses of the first pending operation.
+// NewStarvationGuard creates a protected selector with a bypass limit.
 //
-// It takes a selector that determines the candidate operations and
-// a maximum number of allowed bypasses.
-//
-// The selector cannot be nil, and maxBypasses must be greater than
-// zero.
-//
-// Returns a pointer to the initialized scheduler or an error if any
-// of the parameters do not meet the constraints.
+// Requires a non-null selector and a maxBypasses value greater than zero.
 func NewStarvationGuard(selector Selector, maxBypasses uint64) (*StarvationGuard, error) {
 	if selector == nil {
 		return nil, errors.New("selector cannot be nil")
@@ -51,29 +38,11 @@ func NewStarvationGuard(selector Selector, maxBypasses uint64) (*StarvationGuard
 	}, nil
 }
 
-// Next selects a pending operation based on available capacity and the configured
-// advance limit.
+// Next prioritizes the first operation when sufficient capacity is available.
+// Otherwise, it defers the selection until the advance limit is reached.
 //
-// The first operation takes priority when its cost does not exceed the available
-// capacity.
-//
-// If there is insufficient capacity, it delegates the selection to the underlying
-// scheduler as long as the maximum number of advances has not been reached.
-//
-// The counter increments when the selector returns a valid index after the first
-// position. It resets when the identifier of the first operation changes, when that
-// operation can be executed or when the queue becomes empty.
-//
-// Returns:
-//   - 0 if the first operation has sufficient capacity.
-//   - An index provided by the underlying selector when selection is permitted.
-//   - -1 if the queue is empty or the advance limit has been reached.
-//
-// Selection and counter updates are performed under mutual exclusion.
-//
-// TODO: The lock limits preemptions, but does not guarantee a maximum wait time;
-// the execution of the locked operation still depends on sufficient capacity becoming
-// available.
+// The counter is reset when the first operation changes; it may be executed,
+// or the queue becomes empty. It returns -1 if a selection cannot be made.
 func (starvation *StarvationGuard) Next(pending []core.Operation, available uint64) int {
 	starvation.mutex.Lock()
 	defer starvation.mutex.Unlock()
@@ -84,19 +53,16 @@ func (starvation *StarvationGuard) Next(pending []core.Operation, available uint
 		return -1
 	}
 
-	// Resets the counter when the first pending operation changes
 	if starvation.headID != pending[0].ID {
 		starvation.headID = pending[0].ID
 		starvation.bypasses = 0
 	}
 
-	// Prioritize the first operation when sufficient capacity is available
 	if pending[0].Cost <= available {
 		starvation.bypasses = 0
 		return 0
 	}
 
-	// Prevents further advances when the limit is reached
 	if starvation.bypasses >= starvation.maxBypasses {
 		return -1
 	}

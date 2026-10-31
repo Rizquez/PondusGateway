@@ -5,8 +5,8 @@ import (
 	"strings"
 )
 
-// Operation represents an operation associated with a customer,
-// identified by an ID, a type, and a cost.
+// An Operation represents a unit of work
+// with an associated capacity cost.
 type Operation struct {
 	ID       string
 	ClientID string
@@ -14,17 +14,8 @@ type Operation struct {
 	Cost     uint64
 }
 
-// Validate checks that the operation complies with the established
-// constraints.
-//
-// The ID, ClientID, and Type fields cannot be empty or contain only
-// spaces; and the Cost field must be greater than zero.
-//
-// Returns an error describing the first constraint violation or nil
-// if the operation is valid.
-//
-// It does not modify or normalize the operation’s data, nor does it
-// check for duplicate identifiers.
+// Validate checks that the identifiers and type
+// are not empty and that the cost is greater than zero.
 func (operation Operation) Validate() error {
 	switch {
 	case strings.TrimSpace(operation.ID) == "":

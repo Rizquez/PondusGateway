@@ -66,25 +66,22 @@ var (
 )
 
 func TestSleepExecutor(t *testing.T) {
-	op := core.Operation{ID: "op-1"}
+	operation := core.Operation{ID: "op-1"}
 
 	// Correct execution
 	err := (SleepExecutor{
 		Duration: time.Millisecond,
-	}).Execute(context.Background(), op)
+	}).Execute(context.Background(), operation)
 
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Invalid duration
-	err = (SleepExecutor{}).Execute(context.Background(), op)
+	err = (SleepExecutor{}).Execute(context.Background(), operation)
 
 	if !errors.Is(err, ErrInvalidDuration) {
-		t.Fatalf(
-			"got %v, want ErrInvalidDuration",
-			err,
-		)
+		t.Fatalf("got %v, want ErrInvalidDuration", err)
 	}
 
 	// Context canceled
@@ -93,13 +90,10 @@ func TestSleepExecutor(t *testing.T) {
 
 	err = (SleepExecutor{
 		Duration: time.Hour,
-	}).Execute(ctx, op)
+	}).Execute(ctx, operation)
 
 	if !errors.Is(err, context.Canceled) {
-		t.Fatalf(
-			"got %v, want context.Canceled",
-			err,
-		)
+		t.Fatalf("got %v, want context.Canceled", err)
 	}
 
 	// Timeout
@@ -111,13 +105,10 @@ func TestSleepExecutor(t *testing.T) {
 
 	err = (SleepExecutor{
 		Duration: time.Second,
-	}).Execute(ctx, op)
+	}).Execute(ctx, operation)
 
 	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf(
-			"got %v, want context.DeadlineExceeded",
-			err,
-		)
+		t.Fatalf("got %v, want context.DeadlineExceeded", err)
 	}
 }
 
@@ -137,10 +128,7 @@ func TestCPUExecutor(t *testing.T) {
 	err = (CPUExecutor{}).Execute(context.Background(), operation)
 
 	if !errors.Is(err, ErrInvalidIterations) {
-		t.Fatalf(
-			"got %v, want ErrInvalidIterations",
-			err,
-		)
+		t.Fatalf("got %v, want ErrInvalidIterations", err)
 	}
 
 	// Context canceled
@@ -152,10 +140,7 @@ func TestCPUExecutor(t *testing.T) {
 	}).Execute(ctx, operation)
 
 	if !errors.Is(err, context.Canceled) {
-		t.Fatalf(
-			"got %v, want context.Canceled",
-			err,
-		)
+		t.Fatalf("got %v, want context.Canceled", err)
 	}
 }
 
@@ -169,10 +154,7 @@ func TestFailingExecutor(t *testing.T) {
 	}).Execute(context.Background(), operation)
 
 	if !errors.Is(err, failure) {
-		t.Fatalf(
-			"got %v, want controlled failure",
-			err,
-		)
+		t.Fatalf("got %v, want controlled failure", err)
 	}
 
 	// Invalid configuration
@@ -182,10 +164,7 @@ func TestFailingExecutor(t *testing.T) {
 	)
 
 	if !errors.Is(err, ErrMissingFailure) {
-		t.Fatalf(
-			"got %v, want ErrMissingFailure",
-			err,
-		)
+		t.Fatalf("got %v, want ErrMissingFailure", err)
 	}
 
 	// Context canceled
@@ -197,10 +176,7 @@ func TestFailingExecutor(t *testing.T) {
 	}).Execute(ctx, operation)
 
 	if !errors.Is(err, context.Canceled) {
-		t.Fatalf(
-			"got %v, want context.Canceled",
-			err,
-		)
+		t.Fatalf("got %v, want context.Canceled", err)
 	}
 }
 
@@ -269,14 +245,11 @@ func TestRunnerConcurrentExecution(t *testing.T) {
 		)
 	}
 
-	for i, result := range results {
+	for index, result := range results {
 		if result.Err != nil ||
 			result.Decision == admission.Rejected ||
-			result.OperationID != operations[i].ID {
-			t.Fatalf(
-				"unexpected result: %+v",
-				result,
-			)
+			result.OperationID != operations[index].ID {
+			t.Fatalf("unexpected result: %+v", result)
 		}
 	}
 
@@ -322,10 +295,7 @@ func TestRunnerRejectedOperation(t *testing.T) {
 
 	if results[0].Decision != admission.Started ||
 		results[1].Decision != admission.Rejected {
-		t.Fatalf(
-			"unexpected decisions: %+v",
-			results,
-		)
+		t.Fatalf("unexpected decisions: %+v", results)
 	}
 }
 
@@ -479,10 +449,7 @@ func TestRunnerLifecycle(t *testing.T) {
 			}
 
 			if len(results) != 1 {
-				t.Fatalf(
-					"got %d results, want 1",
-					len(results),
-				)
+				t.Fatalf("got %d results, want 1", len(results))
 			}
 
 			result := results[0]
@@ -590,10 +557,7 @@ func TestRunnerOperationTimeout(t *testing.T) {
 
 	for _, result := range results {
 		if !errors.Is(result.Err, context.DeadlineExceeded) {
-			t.Fatalf(
-				"unexpected result: %+v",
-				result,
-			)
+			t.Fatalf("unexpected result: %+v", result)
 		}
 	}
 
@@ -642,10 +606,7 @@ func TestRunnerCancelPending(t *testing.T) {
 
 		for _, result := range results {
 			if !errors.Is(result.Err, context.Canceled) {
-				t.Fatalf(
-					"unexpected result: %+v",
-					result,
-				)
+				t.Fatalf("unexpected result: %+v", result)
 			}
 		}
 
@@ -654,10 +615,7 @@ func TestRunnerCancelPending(t *testing.T) {
 	}
 
 	if exec.runs.Load() != 1 {
-		t.Fatalf(
-			"executed %d operations, want 1",
-			exec.runs.Load(),
-		)
+		t.Fatalf("executed %d operations, want 1", exec.runs.Load())
 	}
 
 	active, queued, used := controller.Snapshot()
@@ -725,31 +683,19 @@ func TestRunnerCleanupOnInternalError(t *testing.T) {
 	}
 
 	if len(results) != 3 {
-		t.Fatalf(
-			"got %d results, want 3",
-			len(results),
-		)
+		t.Fatalf("got %d results, want 3", len(results))
 	}
 
 	if results[0].State != core.StateCompleted {
-		t.Fatalf(
-			"unexpected state for a: %s",
-			results[0].State,
-		)
+		t.Fatalf("unexpected state for a: %s", results[0].State)
 	}
 
 	if results[1].State != core.StateCancelled {
-		t.Fatalf(
-			"unexpected state for b: %s",
-			results[1].State,
-		)
+		t.Fatalf("unexpected state for b: %s", results[1].State)
 	}
 
 	if results[2].State != core.StateCancelled {
-		t.Fatalf(
-			"unexpected state for c: %s",
-			results[2].State,
-		)
+		t.Fatalf("unexpected state for c: %s", results[2].State)
 	}
 
 	active, queued, used := controller.Snapshot()
@@ -803,7 +749,7 @@ func TestRunnerExclusiveExecution(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	op := core.Operation{
+	operation := core.Operation{
 		ID:       "a",
 		ClientID: "client-1",
 		Type:     "compute",
@@ -825,7 +771,7 @@ func TestRunnerExclusiveExecution(t *testing.T) {
 	go func() {
 		results, err := runner.Run(
 			ctx,
-			[]core.Operation{op},
+			[]core.Operation{operation},
 		)
 		finished <- outcome{results: results, err: err}
 	}()
@@ -838,7 +784,7 @@ func TestRunnerExclusiveExecution(t *testing.T) {
 
 	_, err = runner.Run(
 		context.Background(),
-		[]core.Operation{op},
+		[]core.Operation{operation},
 	)
 
 	if !errors.Is(err, ErrRunnerBusy) {
@@ -863,10 +809,7 @@ func TestRunnerExclusiveExecution(t *testing.T) {
 		}
 
 		if result.results[0].State != core.StateCancelled {
-			t.Fatalf(
-				"unexpected state: %s",
-				result.results[0].State,
-			)
+			t.Fatalf("unexpected state: %s", result.results[0].State)
 		}
 
 	case <-time.After(2 * time.Second):
@@ -929,18 +872,12 @@ func TestRunnerNoProgress(t *testing.T) {
 		},
 	}
 
-	ctx, cancel := context.WithCancel(
-		context.Background(),
-	)
-	defer cancel()
+	ctx := t.Context()
 
 	results, err := runner.Run(ctx, operations)
 
 	if !errors.Is(err, ErrNoProgress) {
-		t.Fatalf(
-			"got error %v, want ErrNoProgress",
-			err,
-		)
+		t.Fatalf("got error %v, want ErrNoProgress", err)
 	}
 
 	if len(results) != 2 {
@@ -948,24 +885,15 @@ func TestRunnerNoProgress(t *testing.T) {
 	}
 
 	if results[0].State != core.StateCompleted {
-		t.Fatalf(
-			"operation a: got state %s, want completed",
-			results[0].State,
-		)
+		t.Fatalf("operation a: got state %s, want completed", results[0].State)
 	}
 
 	if results[1].State != core.StateCancelled {
-		t.Fatalf(
-			"operation b: got state %s, want cancelled",
-			results[1].State,
-		)
+		t.Fatalf("operation b: got state %s, want cancelled", results[1].State)
 	}
 
 	if !errors.Is(results[1].Err, ErrNoProgress) {
-		t.Fatalf(
-			"operation b: got error %v",
-			results[1].Err,
-		)
+		t.Fatalf("operation b: got error %v", results[1].Err)
 	}
 
 	active, queued, used := controller.Snapshot()

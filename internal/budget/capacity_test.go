@@ -48,10 +48,7 @@ func TestCapacityReservations(t *testing.T) {
 	assertCapacity(t, capacity, 15, 15)
 
 	if err := capacity.Release("a"); !errors.Is(err, ErrNotFound) {
-		t.Fatalf(
-			"Release() = %v, want ErrNotFound",
-			err,
-		)
+		t.Fatalf("Release() = %v, want ErrNotFound", err)
 	}
 
 	assertCapacity(t, capacity, 15, 15)
@@ -117,10 +114,7 @@ func TestCapacityUint64Boundary(t *testing.T) {
 	}
 
 	if err := capacity.Reserve("b", 2); !errors.Is(err, ErrInsufficient) {
-		t.Fatalf(
-			"Reserve() = %v, want ErrInsufficient",
-			err,
-		)
+		t.Fatalf("Reserve() = %v, want ErrInsufficient", err)
 	}
 
 	if err := capacity.Reserve("b", 1); err != nil {
@@ -160,10 +154,7 @@ func TestCapacityConcurrentReservations(t *testing.T) {
 				successful.Add(1)
 			case errors.Is(err, ErrInsufficient):
 			default:
-				t.Errorf(
-					"unexpected reservation error: %v",
-					err,
-				)
+				t.Errorf("unexpected reservation error: %v", err)
 			}
 		}(i)
 	}
@@ -171,10 +162,7 @@ func TestCapacityConcurrentReservations(t *testing.T) {
 	wg.Wait()
 
 	if got := successful.Load(); got != 100 {
-		t.Fatalf(
-			"successful reservations = %d, want 100",
-			got,
-		)
+		t.Fatalf("successful reservations = %d, want 100", got)
 	}
 
 	assertCapacity(t, capacity, 100, 0)
@@ -203,10 +191,7 @@ func TestCapacityConcurrentReleaseOnlyOnce(t *testing.T) {
 				successful.Add(1)
 			case errors.Is(err, ErrNotFound):
 			default:
-				t.Errorf(
-					"unexpected release error: %v",
-					err,
-				)
+				t.Errorf("unexpected release error: %v", err)
 			}
 		})
 	}
@@ -214,10 +199,7 @@ func TestCapacityConcurrentReleaseOnlyOnce(t *testing.T) {
 	wg.Wait()
 
 	if got := successful.Load(); got != 1 {
-		t.Fatalf(
-			"successful releases = %d, want 1",
-			got,
-		)
+		t.Fatalf("successful releases = %d, want 1", got)
 	}
 
 	assertCapacity(t, capacity, 0, 10)

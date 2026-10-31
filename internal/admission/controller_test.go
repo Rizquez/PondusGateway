@@ -10,7 +10,6 @@ import (
 	"testing"
 )
 
-// brokenSelector allows you to check for partial errors without modifying the engine
 type brokenSelector struct{ calls int }
 
 func (selector *brokenSelector) Next(pending []core.Operation, available uint64) int {
@@ -88,10 +87,7 @@ func TestAdmission(t *testing.T) {
 	}
 
 	if len(promoted) != 1 || promoted[0].ID != "controller" {
-		t.Fatalf(
-			"unexpected promoted operations: %+v",
-			promoted,
-		)
+		t.Fatalf("unexpected promoted operations: %+v", promoted)
 	}
 
 	active, queued, used = controller.Snapshot()
@@ -188,18 +184,13 @@ func TestStarvationGuardAdmission(t *testing.T) {
 		}
 	}
 
-	// 4 units are released
 	promoted, err := controller.Finish("b")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Exactly two passing maneuvers are allowed
 	if len(promoted) != 2 || promoted[0].ID != "small1" || promoted[1].ID != "small2" {
-		t.Fatalf(
-			"unexpected promotions: %+v",
-			promoted,
-		)
+		t.Fatalf("unexpected promotions: %+v", promoted)
 	}
 
 	active, queued, used := controller.Snapshot()
@@ -210,7 +201,6 @@ func TestStarvationGuardAdmission(t *testing.T) {
 		)
 	}
 
-	// A is released, but Big still doesn't fit
 	promoted, err = controller.Finish("a")
 	if err != nil || len(promoted) != 0 {
 		t.Fatalf(
@@ -219,17 +209,13 @@ func TestStarvationGuardAdmission(t *testing.T) {
 		)
 	}
 
-	// small1 is released, now big can begin
 	promoted, err = controller.Finish("small1")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	if len(promoted) != 1 || promoted[0].ID != "big" {
-		t.Fatalf(
-			"expected big promotion: %+v",
-			promoted,
-		)
+		t.Fatalf("expected big promotion: %+v", promoted)
 	}
 
 	active, queued, used = controller.Snapshot()
@@ -254,7 +240,6 @@ func TestSaturationAndConcurrentFinish(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Record the 50 transactions
 	for i := range total {
 		id := fmt.Sprintf("op-%d", i)
 
@@ -331,10 +316,7 @@ func TestSaturationAndConcurrentFinish(t *testing.T) {
 			}
 
 			if seen[result.id] {
-				t.Fatalf(
-					"finished twice: %s",
-					result.id,
-				)
+				t.Fatalf("finished twice: %s", result.id)
 			}
 
 			seen[result.id] = true
@@ -401,7 +383,6 @@ func TestFIFOHeadDoesNotFit(t *testing.T) {
 		}
 	}
 
-	// We released B: 4 units remain available
 	promoted, err := controller.Finish("b")
 	if err != nil || len(promoted) != 0 {
 		t.Fatalf(
@@ -418,7 +399,6 @@ func TestFIFOHeadDoesNotFit(t *testing.T) {
 		)
 	}
 
-	// Once A is released, both can enter
 	promoted, err = controller.Finish("a")
 	if err != nil || len(promoted) != 2 || promoted[0].ID != "big" || promoted[1].ID != "small" {
 		t.Fatalf(
@@ -514,13 +494,11 @@ func TestCompareSchedulers(t *testing.T) {
 				}
 			}
 
-			// B is completed and 4 units are released
 			promoted, err := controller.Finish("b")
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			// The system checks which transactions selected
 			if len(promoted) != len(test.wantIDs) {
 				t.Fatalf(
 					"promoted = %d, want %d",
@@ -545,7 +523,6 @@ func TestCompareSchedulers(t *testing.T) {
 				)
 			}
 
-			// No strategy should exceed the limits
 			if active > 4 || queued > 4 || used > 10 {
 				t.Fatal("capacity limit violated")
 			}
@@ -625,19 +602,13 @@ func TestCancelPendingAndReuse(t *testing.T) {
 
 	cancelled := controller.CancelPending()
 	if len(cancelled) != 2 || cancelled[0].ID != "b" || cancelled[1].ID != "c" {
-		t.Fatalf(
-			"cancelled = %+v",
-			cancelled,
-		)
+		t.Fatalf("cancelled = %+v", cancelled)
 	}
 
 	assertSnapshot(t, controller, 1, 0, 3)
 
 	if got := controller.CancelPending(); got != nil {
-		t.Fatalf(
-			"empty cancellation = %+v",
-			got,
-		)
+		t.Fatalf("empty cancellation = %+v", got)
 	}
 
 	submit(testOperation("b", 1), Queued)
@@ -649,20 +620,14 @@ func TestCancelPendingAndReuse(t *testing.T) {
 	assertSnapshot(t, controller, 0, 1, 0)
 
 	if err := controller.FinishWithoutPromotion("a"); !errors.Is(err, ErrNotActive) {
-		t.Fatalf(
-			"second FinishWithoutPromotion: %v",
-			err,
-		)
+		t.Fatalf("second FinishWithoutPromotion: %v", err)
 	}
 
 	submit(testOperation("a", 1), Queued)
 	assertSnapshot(t, controller, 0, 2, 0)
 
 	if got := controller.CancelPending(); len(got) != 2 {
-		t.Fatalf(
-			"cancelled = %+v",
-			got,
-		)
+		t.Fatalf("cancelled = %+v", got)
 	}
 
 	submit(testOperation("a", 1), Started)
@@ -696,17 +661,11 @@ func TestPromotionErrorPreservesProgress(t *testing.T) {
 	promoted, err := controller.Finish("a")
 
 	if err == nil || !strings.Contains(err.Error(), "invalid index") {
-		t.Fatalf(
-			"expected invalid index: %v",
-			err,
-		)
+		t.Fatalf("expected invalid index: %v", err)
 	}
 
 	if len(promoted) != 1 || promoted[0].ID != "c" {
-		t.Fatalf(
-			"partial promotions = %+v",
-			promoted,
-		)
+		t.Fatalf("partial promotions = %+v", promoted)
 	}
 	assertSnapshot(t, controller, 1, 1, 1)
 }

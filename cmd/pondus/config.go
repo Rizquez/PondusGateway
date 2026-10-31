@@ -17,21 +17,16 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// ClientConfig defines a client's workload configuration.
 type ClientConfig struct {
 	ID         string `yaml:"id"`
 	Operations int    `yaml:"operations"`
 	Cost       uint64 `yaml:"cost"`
 }
 
-// FileConfig represents the configuration of a simulation
-// loaded from a YAML file.
+// FileConfig defines the configuration of a simulation using YAML.
 //
-// It groups admission limits, the workload definition,
-// the executor, the scheduling strategy, and the clients.
-//
-// The workload can be defined by a global number
-// of operations or by a list of clients, but not both.
+// The workload must be specified using operations.count or a list
+// of clients, but never both.
 type FileConfig struct {
 	Limits struct {
 		MaxConcurrent int    `yaml:"max_concurrent"`
@@ -56,13 +51,9 @@ type FileConfig struct {
 	Clients []ClientConfig `yaml:"clients"`
 }
 
-// loadConfig loads and validates the configuration from a YAML file.
+// loadConfig loads and validates a single YAML document.
 //
-// It requires that the file contain exactly one YAML document
-// and validates the configuration constraints before returning it.
-//
-// It returns the loaded configuration or an error if reading, decoding
-// or any of the validations fail.
+// It rejects unknown fields and additional documents.
 func loadConfig(path string) (FileConfig, error) {
 	var file FileConfig
 
@@ -94,19 +85,10 @@ func loadConfig(path string) (FileConfig, error) {
 	return file, nil
 }
 
-// validate checks that the configuration meets the constraints required
-// to run a simulation.
+// validate checks the configuration constraints of a simulation.
 //
-// Validates admission limits and the workload definition, including an
-// admission capacity check for the mode based on a global number of operations.
-//
-// Supports the FIFO, capacity-fit, and capacity-fit-guarded strategies.
-//
-// The MaxBypasses parameter must be positive only for capacity-fit-guarded and
-// zero for all other strategies.
-//
-// Returns an error describing the first violated constraint or nil if the
-// configuration is valid.
+// It supports only the sleep executor and requires that max_bypasses
+// be positive exclusively with the capacity-fit-guarded strategy.
 func (file FileConfig) validate() error {
 	limits := file.limits()
 
@@ -129,10 +111,7 @@ func (file FileConfig) validate() error {
 	}
 
 	if file.Executor.Type != "sleep" {
-		return fmt.Errorf(
-			"unsupported executor type %q",
-			file.Executor.Type,
-		)
+		return fmt.Errorf("unsupported executor type %q", file.Executor.Type)
 	}
 
 	duration, err := time.ParseDuration(file.Executor.Duration)
@@ -152,23 +131,17 @@ func (file FileConfig) validate() error {
 		}
 
 	default:
-		return fmt.Errorf(
-			"unsupported scheduler type %q",
-			file.Scheduler.Type,
-		)
+		return fmt.Errorf("unsupported scheduler type %q", file.Scheduler.Type)
 	}
 
 	return nil
 }
 
-// validateWorkload checks that the workload uses a single configuration mode.
+// validateWorkload requires a single workload type.
 //
-// When configuring clients, it checks that their identifiers are neither empty
-// nor duplicated, that each client has at least one operation, and that its cost
-// is positive and does not exceed the configured maximum capacity.
-//
-// Returns an error upon the first violated constraint or nil if the workload is
-// valid.
+// Client IDs are checked without normalization, so
+// leading spaces are taken into account when detecting
+// duplicates.
 func (file FileConfig) validateWorkload() error {
 	hasClients := len(file.Clients) > 0
 	hasOperations := file.Operations.Count > 0
@@ -190,26 +163,17 @@ func (file FileConfig) validateWorkload() error {
 			}
 
 			if _, exists := known[client.ID]; exists {
-				return fmt.Errorf(
-					"duplicate client ID: %s",
-					client.ID,
-				)
+				return fmt.Errorf("duplicate client ID: %s", client.ID)
 			}
 
 			known[client.ID] = struct{}{}
 
 			if client.Operations <= 0 {
-				return fmt.Errorf(
-					"client %s must have at least one operation",
-					client.ID,
-				)
+				return fmt.Errorf("client %s must have at least one operation", client.ID)
 			}
 
 			if client.Cost == 0 || client.Cost > file.Limits.MaxCapacity {
-				return fmt.Errorf(
-					"invalid cost for client %s",
-					client.ID,
-				)
+				return fmt.Errorf("invalid cost for client %s", client.ID)
 			}
 		}
 	}
@@ -217,15 +181,6 @@ func (file FileConfig) validateWorkload() error {
 	return nil
 }
 
-// buildSelector constructs the scheduling strategy specified in the configuration.
-//
-// Supports the following strategies:
-//   - fifo: selects operations in first-in, first-out order.
-//   - capacity-fit: uses the CapacityFit selector.
-//   - capacity-fit-guarded: uses CapacityFit with protection against unlimited preemptions.
-//
-// Returns the corresponding selector or an error if the strategy is not supported or if
-// StarvationGuard creation fails.
 func buildSelector(file FileConfig) (scheduler.Selector, error) {
 	switch file.Scheduler.Type {
 	case "fifo":
@@ -241,36 +196,19 @@ func buildSelector(file FileConfig) (scheduler.Selector, error) {
 		)
 
 	default:
-		return nil, fmt.Errorf(
-			"unsupported scheduler type %q",
-			file.Scheduler.Type,
-		)
+		return nil, fmt.Errorf("unsupported scheduler type %q", file.Scheduler.Type)
 	}
 }
 
-// runConfigured runs a simulation defined by a YAML file.
-//
-// Loads and validates the configuration, generates the batch of operations,
-// and creates a separate controller and executor.
-//
-// First checks that all operations in the batch can be accommodated within
-// the configured limits.
-//
-// Runs the simulation, displays the metrics report and if the simulation
-// completes without errors, prints the individual results along with the
-// client and cost of each operation.
-//
-// Returns an error if any stage of configuration, validation, admission or
-// execution fails, or nil if it completes successfully.
 func runConfigured(path string, output io.Writer) error {
-	config, err := loadConfig(path)
+	file, err := loadConfig(path)
 	if err != nil {
 		return err
 	}
 
-	batch := buildBatch(config)
-	limits := config.limits()
-	controller, runner, err := newConfiguredRunner(config)
+	batch := buildBatch(file)
+	limits := file.limits()
+	controller, runner, err := newConfiguredRunner(file)
 
 	if err != nil {
 		return err
@@ -283,7 +221,7 @@ func runConfigured(path string, output io.Writer) error {
 	fmt.Fprintf(
 		output,
 		"Pondus Gateway | scheduler=%s operations=%d\n",
-		config.Scheduler.Type, len(batch),
+		file.Scheduler.Type, len(batch),
 	)
 
 	results, report, err := measureRun(
@@ -300,8 +238,8 @@ func runConfigured(path string, output io.Writer) error {
 		return err
 	}
 
-	for i, result := range results {
-		operation := batch[i]
+	for index, result := range results {
+		operation := batch[index]
 		fmt.Fprintf(output, "%s | client=%s | cost=%d | admission=%s | state=%s | error=%v\n",
 			result.OperationID, operation.ClientID, operation.Cost, result.Decision, result.State, result.Err,
 		)
@@ -309,11 +247,6 @@ func runConfigured(path string, output io.Writer) error {
 	return nil
 }
 
-// limits converts the limits defined in FileConfig to the core.Limits
-// structure used by the admission controller.
-//
-// Returns the concurrency, capacity, and maximum queue size values without
-// modifying them or performing additional validations.
 func (file FileConfig) limits() core.Limits {
 	return core.Limits{
 		MaxConcurrent: file.Limits.MaxConcurrent,
@@ -322,17 +255,9 @@ func (file FileConfig) limits() core.Limits {
 	}
 }
 
-// newConfiguredRunner constructs an admission controller and a Runner based
-// on the provided configuration.
+// newConfiguredRunner assumes a previously validated configuration.
 //
-// It initializes the selected scheduler, creates a controller with its own
-// registrations and capacity reservations, and configures a SleepExecutor with
-// the specified duration.
-//
-// Returns the initialized controller and Runner or an error if the construction
-// of any of its components fails.
-//
-// It is assumed that the configuration has been validated beforehand.
+// Each invocation creates a separate controller and runner.
 func newConfiguredRunner(file FileConfig) (*admission.Controller, *execution.Runner, error) {
 	selector, err := buildSelector(file)
 	if err != nil {
@@ -355,6 +280,7 @@ func newConfiguredRunner(file FileConfig) (*admission.Controller, *execution.Run
 			Duration: duration,
 		},
 	)
+
 	if err != nil {
 		return nil, nil, err
 	}
@@ -362,13 +288,11 @@ func newConfiguredRunner(file FileConfig) (*admission.Controller, *execution.Run
 	return controller, runner, nil
 }
 
-// buildBatch generates a batch of operations based on the configured
-// workload mode.
+// buildBatch generates operations based on the configured mode.
 //
-// Returns the generated operations in the order in which they should
-// be presented to the admission controller.
+// If no clients are defined, it uses a default client and unit cost.
 //
-// It is assumed that the configuration contains valid values.
+// Assumes a valid configuration.
 func buildBatch(file FileConfig) []core.Operation {
 	if len(file.Clients) == 0 {
 		batch := make(
@@ -392,32 +316,23 @@ func buildBatch(file FileConfig) []core.Operation {
 	return buildClientBatch(file.Clients)
 }
 
-// buildClientBatch generates a batch of operations distributed
-// among the configured clients using a round-robin approach.
+// buildClientBatch interleaves client operations in rounds,
+// generating one request per client on each iteration.
 //
-// In each round, it includes one operation for each client that
-// still has operations pending generation.
-//
-// Each operation receives a sequential identifier, its client’s
-// identifier, the “sleep” type and the cost configured for that
-// client.
-//
-// The process continues until all requested operations have been generated.
-//
-// It returns the interleaved batch, preserving the order of the clients
-// within each round and without modifying the received configuration.
+// The distribution determines the order of admission, not
+// the order of execution.
 func buildClientBatch(clients []ClientConfig) []core.Operation {
 	batch := make([]core.Operation, 0)
 	remaining := make([]int, len(clients))
 
-	for i, client := range clients {
-		remaining[i] = client.Operations
+	for index, client := range clients {
+		remaining[index] = client.Operations
 	}
 
 	for {
 		added := false
-		for i, client := range clients {
-			if remaining[i] == 0 {
+		for index, client := range clients {
+			if remaining[index] == 0 {
 				continue
 			}
 
@@ -428,7 +343,7 @@ func buildClientBatch(clients []ClientConfig) []core.Operation {
 				Cost:     client.Cost,
 			})
 
-			remaining[i]--
+			remaining[index]--
 			added = true
 		}
 
@@ -440,17 +355,10 @@ func buildClientBatch(clients []ClientConfig) []core.Operation {
 	return batch
 }
 
-// validateBatchAdmission checks that all operations in a batch can be
-// admitted within the provided limits.
+// validateBatchAdmission checks that all operations can be admitted
+// initially within the specified limits, using an isolated controller.
 //
-// Creates a separate admission controller and submits each operation
-// sequentially using Submit.
-//
-// Returns an error if the controller fails to be created any operation
-// results in an admission error or any request receives a Rejected decision.
-//
-// Returns nil if all operations are admitted, regardless of whether they
-// start immediately or remain in the waiting queue.
+// It does not execute operations or simulate subsequent capacity releases.
 func validateBatchAdmission(limits core.Limits, batch []core.Operation) error {
 	controller, err := admission.New(limits)
 	if err != nil {
@@ -468,10 +376,7 @@ func validateBatchAdmission(limits core.Limits, batch []core.Operation) error {
 		}
 
 		if decision == admission.Rejected {
-			return fmt.Errorf(
-				"operation %s rejected by admission limits",
-				operation.ID,
-			)
+			return fmt.Errorf("operation %s rejected by admission limits", operation.ID)
 		}
 	}
 

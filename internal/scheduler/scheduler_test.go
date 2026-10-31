@@ -99,41 +99,26 @@ func TestStarvationGuardBypassLimit(t *testing.T) {
 	}
 
 	if got := starvation.Next(pending, 4); got != 1 {
-		t.Fatalf(
-			"first pass = %d, want 1",
-			got,
-		)
+		t.Fatalf("first pass = %d, want 1", got)
 	}
 
 	pending = append(pending[:1], pending[2:]...)
 	if got := starvation.Next(pending, 3); got != 1 {
-		t.Fatalf(
-			"second pass = %d, want 1",
-			got,
-		)
+		t.Fatalf("second pass = %d, want 1", got)
 	}
 
 	pending = append(pending[:1], pending[2:]...)
 	if got := starvation.Next(pending, 3); got != -1 {
-		t.Fatalf(
-			"after reaching the limit t= %d, want -1",
-			got,
-		)
+		t.Fatalf("after reaching the limit t= %d, want -1", got)
 	}
 
 	if got := starvation.Next(pending, 8); got != 0 {
-		t.Fatalf(
-			"the header takes precedence = %d, want 0",
-			got,
-		)
+		t.Fatalf("the header takes precedence = %d, want 0", got)
 	}
 
 	pending = pending[1:]
 	if got := starvation.Next(pending, 1); got != 0 {
-		t.Fatalf(
-			"new header = %d, want 0",
-			got,
-		)
+		t.Fatalf("new header = %d, want 0", got)
 	}
 }
 
@@ -145,40 +130,25 @@ func TestStarvationGuardResetsOnHeadChangeAndEmptyQueue(t *testing.T) {
 
 	pending := []core.Operation{{ID: "a", Cost: 9}, {ID: "b", Cost: 1}}
 	if got := starvation.Next(pending, 1); got != 1 {
-		t.Fatalf(
-			"initial lead = %d, want 1",
-			got,
-		)
+		t.Fatalf("initial lead = %d, want 1", got)
 	}
 
 	if got := starvation.Next(pending, 1); got != -1 {
-		t.Fatalf(
-			"overtaking limit = %d, want -1",
-			got,
-		)
+		t.Fatalf("overtaking limit = %d, want -1", got)
 	}
 
 	// When the ID of the first operation changes, another counter starts
 	pending = []core.Operation{{ID: "c", Cost: 9}, {ID: "d", Cost: 1}}
 	if got := starvation.Next(pending, 1); got != 1 {
-		t.Fatalf(
-			"counter after header change = %d, want 1",
-			got,
-		)
+		t.Fatalf("counter after header change = %d, want 1", got)
 	}
 
 	if got := starvation.Next(nil, 1); got != -1 {
-		t.Fatalf(
-			"empty tail = %d, want -1",
-			got,
-		)
+		t.Fatalf("empty tail = %d, want -1", got)
 	}
 
 	if got := starvation.Next(pending, 1); got != 1 {
-		t.Fatalf(
-			"counter after clearing the line = %d, want 1",
-			got,
-		)
+		t.Fatalf("counter after clearing the line = %d, want 1", got)
 	}
 }
 
@@ -190,18 +160,12 @@ func TestStarvationGuardNoCandidate(t *testing.T) {
 
 	pending := []core.Operation{{ID: "a", Cost: 9}, {ID: "b", Cost: 4}}
 	if got := starvation.Next(pending, 1); got != -1 {
-		t.Fatalf(
-			"no candidate = %d, want -1",
-			got,
-		)
+		t.Fatalf("no candidate = %d, want -1", got)
 	}
 
 	// A search without a candidate does not use up the allowed advance
 	if got := starvation.Next(pending, 4); got != 1 {
-		t.Fatalf(
-			"after an unsuccessful search = %d, want 1",
-			got,
-		)
+		t.Fatalf("after an unsuccessful search = %d, want 1", got)
 	}
 }
 
@@ -233,17 +197,11 @@ func TestStarvationGuardConcurrentCalls(t *testing.T) {
 			selected++
 		case -1:
 		default:
-			t.Fatalf(
-				"unexpected index: %d",
-				got,
-			)
+			t.Fatalf("unexpected index: %d", got)
 		}
 	}
 
 	if selected != 1 {
-		t.Fatalf(
-			"missed advances = %d, want 1",
-			selected,
-		)
+		t.Fatalf("missed advances = %d, want 1", selected)
 	}
 }

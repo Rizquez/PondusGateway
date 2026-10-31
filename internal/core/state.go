@@ -1,6 +1,7 @@
 package core
 
-// State represents the status of an operation throughout its lifecycle.
+// State represents the status of an
+// operation throughout its lifecycle.
 type State string
 
 const (
@@ -11,19 +12,10 @@ const (
 	StateCancelled State = "cancelled"
 )
 
-// CanTransitionTo checks whether a transition from the current state
+// CanTransitionTo checks whether a transition
 // to the specified state is allowed.
 //
-// Allowed transitions are:
-//   - Pending: Running or Cancelled.
-//   - Running: Completed, Failed, or Cancelled.
-//
-// The Completed, Failed and Cancelled states are final and do not allow
-// new transitions.
-//
-// Returns true if the transition is allowed or false otherwise.
-//
-// Does not modify the current state.
+// Final states do not allow new transitions.
 func (state State) CanTransitionTo(next State) bool {
 	switch state {
 	case StatePending:

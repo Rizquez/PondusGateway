@@ -2,12 +2,11 @@ package observability
 
 import (
 	"math"
-	"testing"
-	"time"
-
 	"pondus-gateway/internal/admission"
 	"pondus-gateway/internal/core"
 	"pondus-gateway/internal/execution"
+	"testing"
+	"time"
 )
 
 func TestSummarize(t *testing.T) {
@@ -60,8 +59,6 @@ func TestSummarize(t *testing.T) {
 
 func TestSampler(t *testing.T) {
 	var sampler Sampler
-
-	// 8 units for 1 second, 4 for 1 second, and 0 for 1 second
 	sampler.Observe(8, 0)
 	sampler.Observe(4, time.Second)
 	sampler.Observe(0, time.Second)
@@ -78,7 +75,7 @@ func TestSampler(t *testing.T) {
 func TestSamplerIgnoresNegativeInterval(t *testing.T) {
 	var sampler Sampler
 	sampler.Observe(5, 0)
-	sampler.Observe(9, -time.Second) // Neither the peak nor lastUsed should change
+	sampler.Observe(9, -time.Second)
 	sampler.Observe(0, time.Second)
 
 	if got := sampler.PeakUsed(); got != 5 {

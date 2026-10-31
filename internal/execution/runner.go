@@ -4,17 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
-	"time"
-
 	"pondus-gateway/internal/admission"
 	"pondus-gateway/internal/core"
+	"sync"
+	"time"
 )
 
-// Result represents the outcome of accepting and executing an operation.
-//
-// It contains the operation identifier, the acceptance decision, the status
-// reached, and the associated error, if any.
+// Result contains the admission decision and the status reached
+// by an operation, along with any errors that may have occurred.
 type Result struct {
 	OperationID string
 	Decision    admission.Decision
@@ -22,11 +19,11 @@ type Result struct {
 	Err         error
 }
 
-// Runner coordinates the admission, execution, and completion of a batch
-// of operations using an admission controller and an executor.
+// Runner coordinates the admission and concurrent execution
+// of operations, managing their lifecycles, cancellations and
+// reserved resources.
 //
-// It manages state transitions, concurrent executions, cancellations, and
-// the release of reserved resources.
+// It supports only one simultaneous batch execution.
 type Runner struct {
 	mutex      sync.Mutex
 	running    bool
@@ -35,61 +32,16 @@ type Runner struct {
 	timeout    time.Duration
 }
 
-var (
-	ErrRunnerBusy = errors.New("runner is already running")
-	ErrNoProgress = errors.New("runner cannot make progress: pending operations without active executions")
-)
-
-// New creates a Runner using the admission controller and executor provided.
-//
-// Returns a pointer to the initialized Runner or an error if any of the required
-// components is nil.
-func New(controller *admission.Controller, executor Executor) (*Runner, error) {
-	if controller == nil || executor == nil {
-		return nil, errors.New("controller and executor are required")
-	}
-	return &Runner{controller: controller, executor: executor}, nil
-}
-
-// SetTimeout sets the maximum execution time for each operation.
-//
-// It only allows you to modify the configuration when the Runner is idle.
-//
-// Returns ErrRunnerBusy if a batch is currently running, an error if the
-// duration is negative, or nil if the configuration is updated successfully.
-//
-// Access to the configuration is protected by mutual exclusion.
-func (runner *Runner) SetTimeout(duration time.Duration) error {
-	if duration < 0 {
-		return errors.New("negative timeout")
-	}
-
-	runner.mutex.Lock()
-	defer runner.mutex.Unlock()
-
-	if runner.running {
-		return ErrRunnerBusy
-	}
-
-	runner.timeout = duration
-	return nil
-}
-
-// completion represents the completion of a single execution.
 type completion struct {
 	id  string
 	err error
 }
 
-// runSession maintains the mutable state of a single Runner execution.
+// runSession maintains the mutable state of a Runner execution.
 //
-// It stores the results, lifecycles, pending operations and logs needed
-// to manage reservations.
+// Only the Run goroutine modifies its maps and results.
 //
-// Only the goroutine that executes Run modifies the session's maps and
-// results.
-//
-// The executing goroutines report their completions via the finished channel.
+// The execution goroutines signal their completion via finished.
 type runSession struct {
 	runner      *Runner
 	ctx         context.Context
@@ -107,26 +59,49 @@ type runSession struct {
 	doneCh      <-chan struct{}
 }
 
-// Run accepts and executes a batch of operations, returning their results
-// in the same order in which they were received.
+var (
+	ErrRunnerBusy = errors.New("runner is already running")
+	ErrNoProgress = errors.New("runner cannot make progress: pending operations without active executions")
+)
+
+// New creates a Runner with the specified admission controller and executor.
 //
-// It allows only one concurrent execution per Runner and requires that the
-// admission controller contain no active or pending operations at the start.
+// Both components must be non-nil.
+func New(controller *admission.Controller, executor Executor) (*Runner, error) {
+	if controller == nil || executor == nil {
+		return nil, errors.New("controller and executor are required")
+	}
+	return &Runner{controller: controller, executor: executor}, nil
+}
+
+// SetTimeout sets the maximum time per operation.
 //
-// Each operation undergoes the admission process and, if admitted, begins
-// execution or remains on hold until it can be promoted.
+// A value of zero disables the limit and the setting can only
+// be changed when the Runner is idle.
+func (runner *Runner) SetTimeout(duration time.Duration) error {
+	if duration < 0 {
+		return errors.New("negative timeout")
+	}
+
+	runner.mutex.Lock()
+	defer runner.mutex.Unlock()
+
+	if runner.running {
+		return ErrRunnerBusy
+	}
+
+	runner.timeout = duration
+	return nil
+}
+
+// Run executes a batch and returns its results in the order they were entered.
 //
-// It manages state transitions, completions, context cancellation, and resource
-// release.
+// Requires a controller with no active or pending operations.
+// Individual errors are logged in Result.Err and do not necessarily indicate a
+// Run error.
 //
-// Returns the batch results and an error if a failure occurs during session
-// coordination.
-//
-// Individual admission or execution errors are logged in the corresponding result
-// and do not necessarily imply a Run error.
-//
-// In the event of internal errors, it attempts to cancel executions, wait for them
-// to complete, and release existing reservations.
+// In the event of internal errors, it attempts to cancel the executions, wait
+// for them to complete, and release the reservations.
 func (runner *Runner) Run(ctx context.Context, operations []core.Operation) (results []Result, runErr error) {
 	runner.mutex.Lock()
 	if runner.running {
@@ -155,7 +130,6 @@ func (runner *Runner) Run(ctx context.Context, operations []core.Operation) (res
 		return results, session.cancelBeforeStart(err)
 	}
 
-	// Cleanup in case of internal errors is performed before launching goroutines
 	defer func() {
 		if runErr != nil {
 			runErr = session.cleanup(runErr, cancelRun)
@@ -167,19 +141,10 @@ func (runner *Runner) Run(ctx context.Context, operations []core.Operation) (res
 			return results, err
 		}
 	}
+
 	return results, session.wait()
 }
 
-// newRunSession initializes the state of a run session.
-//
-// It takes the Runner, the execution contexts, the maximum time per operation
-// and the number of operations in the batch.
-//
-// It initializes the results, operation logs, lifecycles and the channel used
-// to receive completions.
-//
-// Returns a pointer to the created session, with no operations currently running
-// and no pending completions.
 func newRunSession(runner *Runner, ctx, runCtx context.Context, timeout time.Duration, count int) *runSession {
 	return &runSession{
 		runner: runner, ctx: ctx, runCtx: runCtx, timeout: timeout,
@@ -191,19 +156,6 @@ func newRunSession(runner *Runner, ctx, runCtx context.Context, timeout time.Dur
 	}
 }
 
-// admit submits the operations in the batch to the admission controller.
-//
-// Records the decision and error for each operation in the corresponding
-// position in the results.
-//
-// For accepted operations, initializes their lifecycle in the pending state
-// and increments the counter for operations pending completion.
-//
-// Operations accepted for immediate execution are added to the register of
-// initial operations and reserved capacities.
-//
-// Rejected operations do not receive a lifecycle nor are they counted as
-// pending completion.
 func (session *runSession) admit(operations []core.Operation) {
 	for index, operation := range operations {
 		decision, err := session.runner.controller.Submit(operation)
@@ -225,19 +177,8 @@ func (session *runSession) admit(operations []core.Operation) {
 	}
 }
 
-// transition attempts to change the state of a supported operation.
-//
-// It uses the lifecycle associated with its identifier to validate
-// the requested transition.
-//
-// If the transition is valid, it updates the state and error stored
-// in the corresponding result.
-//
-// Returns an error if the transition is not allowed or nil if it is
-// successful.
-//
-// Requires that the operation have a lifecycle and a position previously
-// registered in the session.
+// transition requires that the operation have a lifecycle
+// and a position previously recorded in the session.
 func (session *runSession) transition(id string, state core.State, reason error) error {
 	lifecycle := session.lifecycles[id]
 	if err := lifecycle.TransitionTo(state); err != nil {
@@ -251,16 +192,6 @@ func (session *runSession) transition(id string, state core.State, reason error)
 	return nil
 }
 
-// cancelPending cancels all operations remaining in the admission queue.
-//
-// Removes pending operations from the controller, updates their lifecycles
-// to the Cancelled state, and logs the reason for cancellation in their results.
-//
-// Decreases the counter of operations pending completion for each cancellation
-// performed.
-//
-// Returns an error if any state transition fails or nil if all operations are
-// canceled successfully.
 func (session *runSession) cancelPending(reason error) error {
 	for _, operation := range session.runner.controller.CancelPending() {
 		if err := session.transition(operation.ID, core.StateCancelled, reason); err != nil {
@@ -271,16 +202,8 @@ func (session *runSession) cancelPending(reason error) error {
 	return nil
 }
 
-// cancelBeforeStart cancels the accepted operations before their executors start.
-//
-// First cancels the pending operations, then the operations accepted for immediate
-// execution.
-//
-// Updates their lifecycles to the “Cancelled” state, logs the reason for cancellation
-// and releases reserved capacity without promoting new operations.
-//
-// Returns an error if any state transition or capacity release fails, or nil if the
-// process completes successfully.
+// cancelBeforeStart cancels the supported operations before starting
+// execution and releases their reservations without promoting new operations.
 func (session *runSession) cancelBeforeStart(reason error) error {
 	if err := session.cancelPending(reason); err != nil {
 		return err
@@ -301,20 +224,12 @@ func (session *runSession) cancelBeforeStart(reason error) error {
 	return nil
 }
 
-// launch initiates the asynchronous execution of a supported operation.
-//
-// Transitions to the Running state and registers the operation among the
-// ongoing executions.
-//
-// Starts a goroutine that executes the operation and signals its completion
-// via the finished channel.
-//
-// Returns an error if the transition to the Running state fails or nil if
-// the goroutine starts successfully.
-//
-// Does not wait for the operation to complete.
 func (session *runSession) launch(operation core.Operation) error {
-	if err := session.transition(operation.ID, core.StateRunning, session.results[session.positions[operation.ID]].Err); err != nil {
+	if err := session.transition(
+		operation.ID,
+		core.StateRunning,
+		session.results[session.positions[operation.ID]].Err,
+	); err != nil {
 		return err
 	}
 
@@ -330,18 +245,8 @@ func (session *runSession) launch(operation core.Operation) error {
 	return nil
 }
 
-// execute performs an operation using the configured executor.
-//
-// It uses the session context and, when a timeout is configured,
-// creates a derived context with that timeout.
-//
-// It retrieves any non-null panics that occurred during execution
-// and converts them into errors so they can be handled.
-//
-// Returns the error generated by the executor, the error associated
-// with a recovered panic or nil if execution completes successfully.
-//
-// Cancels the derived context upon completion, when applicable.
+// execute applies the individual timeout, if configured and
+// converts panics recovered from the executor into errors.
 func (session *runSession) execute(operation core.Operation) (err error) {
 	workCtx := session.runCtx
 	cancel := func() {}
@@ -361,13 +266,8 @@ func (session *runSession) execute(operation core.Operation) (err error) {
 	return session.runner.executor.Execute(workCtx, operation)
 }
 
-// completionState determines the final state of an operation based
-// on the error returned by its executor.
-//
-// Returns:
-//   - StateCancelled if the error corresponds to context.Canceled.
-//   - StateFailed if any other error occurs.
-//   - StateCompleted if the execution completes without error.
+// completionState classifies context.Canceled as a cancellation,
+// any other error as a failure and nil as a successful execution.
 func completionState(err error) core.State {
 	if errors.Is(err, context.Canceled) {
 		return core.StateCancelled
@@ -380,18 +280,10 @@ func completionState(err error) core.State {
 	return core.StateCompleted
 }
 
-// observeCancellation checks whether the original session context
-// has been canceled or has expired.
+// observeCancellation processes the cancellation of the original
+// context only once, removing any pending operations.
 //
-// When it detects a cancellation for the first time, it marks the
-// session as canceled, disables new cancellation notifications and
-// cancels pending operations.
-//
-// It does not directly terminate operations that are already running;
-// their completion continues to be monitored.
-//
-// It returns an error if the cancellation of any pending operation fails
-// or nil if no further action is required.
+// Operations currently in progress continue to be monitored.
 func (session *runSession) observeCancellation() error {
 	if session.cancelled || session.ctx.Err() == nil {
 		return nil
@@ -403,17 +295,6 @@ func (session *runSession) observeCancellation() error {
 	return session.cancelPending(session.ctx.Err())
 }
 
-// wait monitors the completion of supported operations until there
-// are no operations remaining to be completed.
-//
-// Listens for notifications from executors and for the cancellation
-// of the original session context.
-//
-// Processes each completion via complete, updating the results and
-// coordinating any promotions.
-//
-// Returns nil when all supported operations have been processed or
-// an error if handling a completion or cancellation fails.
 func (session *runSession) wait() error {
 	for session.outstanding > 0 {
 		if err := session.observeCancellation(); err != nil {
@@ -439,25 +320,14 @@ func (session *runSession) wait() error {
 	return nil
 }
 
-// complete processes the notification that an operation has completed.
+// complete processes a termination and releases the corresponding
+// reservation.
 //
-// Removes the operation from the list of ongoing executions, determines
-// its final status, and updates the associated result.
+// If the session is canceled, it does not commit new operations.
+// Otherwise, it commits the operations committed by the controller.
 //
-// If the session is canceled, it releases the operation's capacity without
-// promoting new executions.
-//
-// Otherwise, it terminates the operation via the controller, records the
-// new reservations, and initiates the promoted operations.
-//
-// It decrements the counter of operations pending termination and checks
-// whether the controller can continue progressing.
-//
-// Returns ErrNoProgress if there are still pending operations without active
-// executions that can free up capacity or an error if any transition, release,
-// reservation or promotion fails.
-//
-// Returns nil when the completion is processed successfully.
+// Returns ErrNoProgress when there are pending operations with no
+// active executions that can free up capacity.
 func (session *runSession) complete(done completion) error {
 	delete(session.inflight, done.id)
 	if err := session.transition(done.id, completionState(done.err), done.err); err != nil {
@@ -509,24 +379,12 @@ func (session *runSession) complete(done completion) error {
 	return nil
 }
 
-// cleanup cleans up resources after an internal error occurs during a session.
+// cleanup cancels execution, waits for active goroutines and
+// releases pending reservations following an internal error.
 //
-// Cancels the execution context and removes operations that remain pending in
-// the controller.
-//
-// Waits for ongoing executions to complete, updates their results and releases
-// registered reservations without promoting new operations.
-//
-// Attempts to update the lifecycles of pending operations to the Cancelled state.
-//
-// When additional errors occur during cleanup, it combines them with the original
-// error using errors.Join.
-//
-// Returns the original error, possibly combined with errors encountered during
-// cleanup.
-//
-// The completion of this method depends on the executing goroutines finishing and
-// reporting their results.
+// Additional errors are combined using errors.Join.
+// It may block indefinitely if an executor does not finish after
+// its context is canceled.
 func (session *runSession) cleanup(runErr error, cancelRun context.CancelFunc) error {
 	cancelRun()
 	for _, operation := range session.runner.controller.CancelPending() {

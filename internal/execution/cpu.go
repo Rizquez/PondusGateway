@@ -10,29 +10,17 @@ import (
 
 var ErrInvalidIterations = errors.New("iterations must be greater than zero")
 
-// CPUExecutor implements an executor that simulates a CPU-intensive
-// workload by performing repeated SHA-256 hash calculations.
+// CPUExecutor simulates a CPU-intensive load
+// by performing sequential SHA-256 hash calculations.
 type CPUExecutor struct {
 	Iterations uint64
 }
 
-// Execute performs a CPU workload by sequentially computing SHA-256 hashes for
-// the configured number of iterations.
+// Execute performs the configured number of iterations without using
+// the operation data.
 //
-// The number of iterations must be greater than zero.
-//
-// The received operation does not affect the calculations performed.
-//
-// Checks the context status before starting the calculations, periodically every
-// 256 iterations, and upon completion of execution.
-//
-// Returns:
-//   - ErrInvalidIterations if the number of iterations is zero.
-//   - The context’s error if it is canceled or times out.
-//   - nil if all iterations complete without errors.
-//
-// Cancellation is cooperative and is detected at the context’s checkpoints, though
-// not necessarily immediately.
+// Cancellation is cooperative: it checks the context every 256 iterations
+// and upon completion, so the interruption may not be immediate.
 func (executor CPUExecutor) Execute(ctx context.Context, _ core.Operation) error {
 	if executor.Iterations == 0 {
 		return ErrInvalidIterations

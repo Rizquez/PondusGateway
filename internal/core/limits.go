@@ -2,26 +2,16 @@ package core
 
 import "errors"
 
-// Limits defines the capacity and consumption constraints
-// used to control the execution of operations.
+// Limits defines the concurrency, capacity and queue
+// constraints applied to transaction admission.
 type Limits struct {
 	MaxConcurrent int
 	MaxCapacity   uint64
 	MaxQueueSize  int
 }
 
-// Validate checks that the configuration limits comply with
-// the established constraints.
-//
-// The required conditions are:
-//   - MaxConcurrent must be greater than zero.
-//   - MaxCapacity must be greater than zero.
-//   - MaxQueueSize cannot be negative; a value of zero is allowed.
-//
-// Returns an error describing the first violated constraint,
-// or nil if all limits are valid.
-//
-// Does not modify the configuration values.
+// Validate checks that the limits are valid.
+// MaxQueueSize can be zero, which prevents operations from being queued.
 func (limits Limits) Validate() error {
 	if limits.MaxConcurrent <= 0 {
 		return errors.New("max concurrent must be greater than zero")
