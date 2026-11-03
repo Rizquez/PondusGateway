@@ -905,3 +905,98 @@ func TestRunnerNoProgress(t *testing.T) {
 		)
 	}
 }
+
+// --- owner_executor ---
+type ownershipExecutor struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (executor *ownershipExecutor) Execute(_ context.Context, _ core.Operation) error {
+	close(executor.started)
+	<-executor.release
+	return nil
+}
+
+func TestRunnerOwnsController(t *testing.T) {
+	controller, err := admission.New(core.Limits{MaxConcurrent: 1, MaxCapacity: 1, MaxQueueSize: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	executor := &ownershipExecutor{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	runner, err := New(controller, executor)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	finished := make(chan error, 1)
+	go func() {
+		_, err := runner.Run(
+			context.Background(),
+			[]core.Operation{{
+				ID:       "owned",
+				ClientID: "test",
+				Type:     "compute",
+				Cost:     1,
+			}},
+		)
+		finished <- err
+	}()
+
+	select {
+	case <-executor.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("executor did not start")
+	}
+
+	external := core.Operation{
+		ID:       "external",
+		ClientID: "test",
+		Type:     "compute",
+		Cost:     1,
+	}
+
+	if decision, err := controller.Submit(external); decision != admission.Rejected || !errors.Is(err, admission.ErrControllerBusy) {
+		t.Fatalf(
+			"external Submit = (%v,%v); want (Rejected,ErrControllerBusy)",
+			decision, err,
+		)
+	}
+
+	if cancelled := controller.CancelPending(); len(cancelled) != 0 {
+		t.Fatalf("external cancellation changed pending queue: %v", cancelled)
+	}
+
+	close(executor.release)
+
+	select {
+	case err := <-finished:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("runner did not finish")
+	}
+
+	if active, queued, used := controller.Snapshot(); active != 0 || queued != 0 || used != 0 {
+		t.Fatalf(
+			"leaked state: active=%d queued=%d used=%d",
+			active, queued, used,
+		)
+	}
+
+	if decision, err := controller.Submit(external); decision != admission.Started || err != nil {
+		t.Fatalf(
+			"controller did not become available: %v, %v",
+			decision, err,
+		)
+	}
+
+	if err := controller.FinishWithoutPromotion(external.ID); err != nil {
+		t.Fatal(err)
+	}
+}

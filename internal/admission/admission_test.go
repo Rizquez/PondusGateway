@@ -29,7 +29,7 @@ func testOperation(id string, cost uint64) core.Operation {
 	}
 }
 
-func assertSnapshot(t *testing.T, controller *Controller, wantActive, wantQueued int, wantUsed uint64) {
+func assertSnapshot(t *testing.T, controller *Controller, wantActive int, wantQueued int, wantUsed uint64) {
 	t.Helper()
 	active, queued, used := controller.Snapshot()
 	if active != wantActive || queued != wantQueued || used != wantUsed {
@@ -38,6 +38,22 @@ func assertSnapshot(t *testing.T, controller *Controller, wantActive, wantQueued
 			active, queued, used, wantActive, wantQueued, wantUsed,
 		)
 	}
+}
+
+func newSessionController(t *testing.T) *Controller {
+	t.Helper()
+
+	controller, err := New(core.Limits{
+		MaxConcurrent: 1,
+		MaxCapacity:   1,
+		MaxQueueSize:  2,
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return controller
 }
 
 func TestAdmission(t *testing.T) {
@@ -668,4 +684,222 @@ func TestPromotionErrorPreservesProgress(t *testing.T) {
 		t.Fatalf("partial promotions = %+v", promoted)
 	}
 	assertSnapshot(t, controller, 1, 1, 1)
+}
+
+func TestSessionExclusiveMutationsAndRecovery(t *testing.T) {
+	controller := newSessionController(t)
+	session, err := controller.Acquire()
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := controller.Acquire(); !errors.Is(err, ErrControllerBusy) {
+		t.Fatalf("second acquire: %v", err)
+	}
+
+	operation := core.Operation{
+		ID:       "owned",
+		ClientID: "a",
+		Type:     "test",
+		Cost:     1,
+	}
+	if decision, err := session.Submit(operation); err != nil || decision != Started {
+		t.Fatalf(
+			"session submit %session %v",
+			decision, err,
+		)
+	}
+
+	pending := core.Operation{
+		ID:       "queued",
+		ClientID: "a",
+		Type:     "test",
+		Cost:     1,
+	}
+	if decision, err := session.Submit(pending); err != nil || decision != Queued {
+		t.Fatalf(
+			"session pending %session %v",
+			decision, err,
+		)
+	}
+
+	if _, err := controller.Submit(core.Operation{
+		ID:       "external",
+		ClientID: "x",
+		Type:     "test", Cost: 1,
+	}); !errors.Is(err, ErrControllerBusy) {
+		t.Fatalf("external submit %v", err)
+	}
+
+	if _, err := controller.Finish("owned"); !errors.Is(err, ErrControllerBusy) {
+		t.Fatalf("external finish %v", err)
+	}
+
+	if err := controller.FinishWithoutPromotion("owned"); !errors.Is(err, ErrControllerBusy) {
+		t.Fatalf("external finish no promotion %v", err)
+	}
+
+	if got := controller.CancelPending(); got != nil {
+		t.Fatalf("external cancel changed pending: %v", got)
+	}
+
+	if err := session.Release(); !errors.Is(err, ErrControllerNotEmpty) {
+		t.Fatalf("premature release %v", err)
+	}
+
+	active, queued, used := controller.Snapshot()
+	if active != 1 || queued != 1 || used != 1 {
+		t.Fatalf(
+			"unexpected state %d %d %d",
+			active, queued, used,
+		)
+	}
+
+	if operations, err := session.CancelPending(); err != nil || len(operations) != 1 || operations[0].ID != "queued" {
+		t.Fatalf(
+			"cancel: %v %v",
+			operations, err,
+		)
+	}
+
+	if err := session.FinishWithoutPromotion("owned"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := session.Release(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := session.Submit(operation); !errors.Is(err, ErrSessionClosed) {
+		t.Fatalf("stale session %v", err)
+	}
+
+	if err := session.Release(); !errors.Is(err, ErrSessionClosed) {
+		t.Fatalf("double release %v", err)
+	}
+
+	if _, err := controller.Submit(operation); err != nil {
+		t.Fatalf("controller reuse %v", err)
+	}
+
+	if err := controller.FinishWithoutPromotion("owned"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSessionPromotionAndStaleSession(t *testing.T) {
+	controller := newSessionController(t)
+	session1, err := controller.Acquire()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, id := range []string{"a", "b"} {
+		if _, err := session1.Submit(core.Operation{
+			ID:       id,
+			ClientID: "client",
+			Type:     "test", Cost: 1,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	promoted, err := session1.Finish("a")
+	if err != nil || len(promoted) != 1 || promoted[0].ID != "b" {
+		t.Fatalf(
+			"promotion %v %v",
+			promoted, err,
+		)
+	}
+
+	if err := session1.FinishWithoutPromotion("b"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := session1.Release(); err != nil {
+		t.Fatal(err)
+	}
+
+	session2, err := controller.Acquire()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := session1.Finish("b"); !errors.Is(err, ErrSessionClosed) {
+		t.Fatalf("stale finish %v", err)
+	}
+
+	if _, err := session1.CancelPending(); !errors.Is(err, ErrSessionClosed) {
+		t.Fatalf("stale cancel %v", err)
+	}
+
+	if err := session1.Release(); !errors.Is(err, ErrSessionClosed) {
+		t.Fatalf("stale release %v", err)
+	}
+
+	if err := session2.Release(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAcquireRequiresEmptyController(t *testing.T) {
+	controller := newSessionController(t)
+	if _, err := controller.Submit(core.Operation{
+		ID:       "a",
+		ClientID: "x",
+		Type:     "test",
+		Cost:     1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := controller.Acquire(); !errors.Is(err, ErrControllerNotEmpty) {
+		t.Fatalf("acquire nonempty %v", err)
+	}
+
+	if err := controller.FinishWithoutPromotion("a"); err != nil {
+		t.Fatal(err)
+	}
+
+	session, err := controller.Acquire()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.Release(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestConcurrentAcquireOnlyOneOwner(t *testing.T) {
+	controller := newSessionController(t)
+
+	const n = 32
+	var wg sync.WaitGroup
+	var mutex sync.Mutex
+	sessions := make([]*Session, 0, 1)
+
+	wg.Add(n)
+	for range n {
+		go func() {
+			defer wg.Done()
+			session, err := controller.Acquire()
+			if err == nil {
+				mutex.Lock()
+				sessions = append(sessions, session)
+				mutex.Unlock()
+			} else if !errors.Is(err, ErrControllerBusy) {
+				t.Errorf("unexpected acquire error: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if len(sessions) != 1 {
+		t.Fatalf("got %d owners, want 1", len(sessions))
+	}
+
+	if err := sessions[0].Release(); err != nil {
+		t.Fatal(err)
+	}
 }
