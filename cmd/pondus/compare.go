@@ -14,15 +14,6 @@ type comparisonResult struct {
 	Report    observability.Report
 }
 
-// runComparison compares planning strategies using the same
-// set of operations and the same admission limits.
-//
-// Each strategy is executed using a separate controller.
-// StarvationGuard uses a maximum of two advances when no
-// other value has been configured.
-//
-// The comparison is terminated if any simulation returns an
-// error.
 func runComparison(path string, output io.Writer) error {
 	file, err := loadConfig(path)
 	if err != nil {

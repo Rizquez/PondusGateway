@@ -11,6 +11,7 @@ var (
 	ErrDuplicate    = errors.New("reservation already exists")
 	ErrInsufficient = errors.New("insufficient capacity")
 	ErrNotFound     = errors.New("reservation not found")
+	ErrCapacity     = errors.New("max capacity must be greater than zero")
 )
 
 // Capacity manages individually identified reservations without exceeding
@@ -26,7 +27,7 @@ type Capacity struct {
 // New creates a capacity manager with a maximum value greater than zero.
 func New(max uint64) (*Capacity, error) {
 	if max == 0 {
-		return nil, errors.New("max capacity must be greater than zero")
+		return nil, ErrCapacity
 	}
 
 	return &Capacity{

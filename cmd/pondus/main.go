@@ -20,11 +20,6 @@ func main() {
 	}
 }
 
-// run processes the arguments and runs the simulation in direct mode,
-// using YAML configuration or by comparing planning strategies.
-//
-// Comparison mode requires the -client option. This option cannot be
-// combined with execution parameters other than -compare.
 func run(args []string, output io.Writer) error {
 	flags := flag.NewFlagSet("pondus", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)

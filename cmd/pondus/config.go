@@ -17,6 +17,17 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
+var (
+	ErrNumberDocument    = errors.New("config must contain exactly one YAML document")
+	ErrAdmissionCapacity = errors.New("operations.count exceeds admission capacity")
+	ErrDuration          = errors.New("executor.duration must be a positive Go duration")
+	ErrGuardedRequired   = errors.New("max_bypasses requires capacity-fit-guarded")
+	ErrMaxBypasses       = errors.New("scheduler.max_bypasses must be greater than zero")
+	ErrClients           = errors.New("configure either operations.count or clients")
+	ErrOperations        = errors.New("operations.count cannot be negative")
+	ErrClientID          = errors.New("client ID cannot be empty")
+)
+
 type ClientConfig struct {
 	ID         string `yaml:"id"`
 	Operations int    `yaml:"operations"`
@@ -51,9 +62,6 @@ type FileConfig struct {
 	Clients []ClientConfig `yaml:"clients"`
 }
 
-// loadConfig loads and validates a single YAML document.
-//
-// It rejects unknown fields and additional documents.
 func loadConfig(path string) (FileConfig, error) {
 	var file FileConfig
 
@@ -72,7 +80,7 @@ func loadConfig(path string) (FileConfig, error) {
 	var extra any
 	if err := decoder.Decode(&extra); err != io.EOF {
 		if err == nil {
-			return file, errors.New("config must contain exactly one YAML document")
+			return file, ErrNumberDocument
 		}
 
 		return file, fmt.Errorf("decode trailing YAML: %w", err)
@@ -85,10 +93,6 @@ func loadConfig(path string) (FileConfig, error) {
 	return file, nil
 }
 
-// validate checks the configuration constraints of a simulation.
-//
-// It supports only the sleep executor and requires that max_bypasses
-// be positive exclusively with the capacity-fit-guarded strategy.
 func (file FileConfig) validate() error {
 	limits := file.limits()
 
@@ -107,7 +111,7 @@ func (file FileConfig) validate() error {
 	}
 
 	if file.Operations.Count > maxStarted && file.Operations.Count-maxStarted > file.Limits.MaxQueueSize {
-		return errors.New("operations.count exceeds admission capacity")
+		return ErrAdmissionCapacity
 	}
 
 	if file.Executor.Type != "sleep" {
@@ -116,18 +120,18 @@ func (file FileConfig) validate() error {
 
 	duration, err := time.ParseDuration(file.Executor.Duration)
 	if err != nil || duration <= 0 {
-		return errors.New("executor.duration must be a positive Go duration")
+		return ErrDuration
 	}
 
 	switch file.Scheduler.Type {
 	case "fifo", "capacity-fit":
 		if file.Scheduler.MaxBypasses != 0 {
-			return errors.New("max_bypasses requires capacity-fit-guarded")
+			return ErrGuardedRequired
 		}
 
 	case "capacity-fit-guarded":
 		if file.Scheduler.MaxBypasses == 0 {
-			return errors.New("scheduler.max_bypasses must be greater than zero")
+			return ErrMaxBypasses
 		}
 
 	default:
@@ -137,21 +141,16 @@ func (file FileConfig) validate() error {
 	return nil
 }
 
-// validateWorkload requires a single workload type.
-//
-// Client IDs are checked without normalization, so
-// leading spaces are taken into account when detecting
-// duplicates.
 func (file FileConfig) validateWorkload() error {
 	hasClients := len(file.Clients) > 0
 	hasOperations := file.Operations.Count > 0
 
 	if hasClients == hasOperations {
-		return errors.New("configure either operations.count or clients")
+		return ErrClients
 	}
 
 	if file.Operations.Count < 0 {
-		return errors.New("operations.count cannot be negative")
+		return ErrOperations
 	}
 
 	if hasClients {
@@ -159,7 +158,7 @@ func (file FileConfig) validateWorkload() error {
 
 		for _, client := range file.Clients {
 			if strings.TrimSpace(client.ID) == "" {
-				return errors.New("client ID cannot be empty")
+				return ErrClientID
 			}
 
 			if _, exists := known[client.ID]; exists {
@@ -255,9 +254,6 @@ func (file FileConfig) limits() core.Limits {
 	}
 }
 
-// newConfiguredRunner assumes a previously validated configuration.
-//
-// Each invocation creates a separate controller and runner.
 func newConfiguredRunner(file FileConfig) (*admission.Controller, *execution.Runner, error) {
 	selector, err := buildSelector(file)
 	if err != nil {
@@ -288,11 +284,6 @@ func newConfiguredRunner(file FileConfig) (*admission.Controller, *execution.Run
 	return controller, runner, nil
 }
 
-// buildBatch generates operations based on the configured mode.
-//
-// If no clients are defined, it uses a default client and unit cost.
-//
-// Assumes a valid configuration.
 func buildBatch(file FileConfig) []core.Operation {
 	if len(file.Clients) == 0 {
 		batch := make(
@@ -316,11 +307,6 @@ func buildBatch(file FileConfig) []core.Operation {
 	return buildClientBatch(file.Clients)
 }
 
-// buildClientBatch interleaves client operations in rounds,
-// generating one request per client on each iteration.
-//
-// The distribution determines the order of admission, not
-// the order of execution.
 func buildClientBatch(clients []ClientConfig) []core.Operation {
 	batch := make([]core.Operation, 0)
 	remaining := make([]int, len(clients))
@@ -355,10 +341,6 @@ func buildClientBatch(clients []ClientConfig) []core.Operation {
 	return batch
 }
 
-// validateBatchAdmission checks that all operations can be admitted
-// initially within the specified limits, using an isolated controller.
-//
-// It does not execute operations or simulate subsequent capacity releases.
 func validateBatchAdmission(limits core.Limits, batch []core.Operation) error {
 	controller, err := admission.New(limits)
 	if err != nil {

@@ -2,6 +2,12 @@ package core
 
 import "errors"
 
+var (
+	ErrMaxConcurrent = errors.New("max concurrent must be greater than zero")
+	ErrMaxCapacity   = errors.New("max capacity must be greater than zero")
+	ErrMaxQueue      = errors.New("max queue size cannot be negative")
+)
+
 // Limits defines the concurrency, capacity and queue
 // constraints applied to transaction admission.
 type Limits struct {
@@ -14,15 +20,15 @@ type Limits struct {
 // MaxQueueSize can be zero, which prevents operations from being queued.
 func (limits Limits) Validate() error {
 	if limits.MaxConcurrent <= 0 {
-		return errors.New("max concurrent must be greater than zero")
+		return ErrMaxConcurrent
 	}
 
 	if limits.MaxCapacity == 0 {
-		return errors.New("max capacity must be greater than zero")
+		return ErrMaxCapacity
 	}
 
 	if limits.MaxQueueSize < 0 {
-		return errors.New("max queue size cannot be negative")
+		return ErrMaxQueue
 	}
 
 	return nil

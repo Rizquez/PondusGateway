@@ -5,6 +5,13 @@ import (
 	"strings"
 )
 
+var (
+	ErrOperationID   = errors.New("operation ID cannot be empty")
+	ErrClientID      = errors.New("client ID cannot be empty")
+	ErrOperationType = errors.New("operation type cannot be empty")
+	ErrOperationCost = errors.New("operation cost must be greater than zero")
+)
+
 // An Operation represents a unit of work
 // with an associated capacity cost.
 type Operation struct {
@@ -19,16 +26,16 @@ type Operation struct {
 func (operation Operation) Validate() error {
 	switch {
 	case strings.TrimSpace(operation.ID) == "":
-		return errors.New("operation ID cannot be empty")
+		return ErrOperationID
 
 	case strings.TrimSpace(operation.ClientID) == "":
-		return errors.New("client ID cannot be empty")
+		return ErrClientID
 
 	case strings.TrimSpace(operation.Type) == "":
-		return errors.New("operation type cannot be empty")
+		return ErrOperationType
 
 	case operation.Cost == 0:
-		return errors.New("operation cost must be greater than zero")
+		return ErrOperationCost
 
 	default:
 		return nil

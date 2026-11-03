@@ -6,6 +6,11 @@ import (
 	"sync"
 )
 
+var (
+	ErrSelector    = errors.New("selector cannot be nil")
+	ErrMaxBypasses = errors.New("max bypasses must be greater than zero")
+)
+
 // StarvationGuard limits the number of times the first pending
 // operation can be preempted to reduce the risk of starvation.
 // It is safe under concurrent access.
@@ -25,11 +30,11 @@ type StarvationGuard struct {
 // Requires a non-null selector and a maxBypasses value greater than zero.
 func NewStarvationGuard(selector Selector, maxBypasses uint64) (*StarvationGuard, error) {
 	if selector == nil {
-		return nil, errors.New("selector cannot be nil")
+		return nil, ErrSelector
 	}
 
 	if maxBypasses == 0 {
-		return nil, errors.New("max bypasses must be greater than zero")
+		return nil, ErrMaxBypasses
 	}
 
 	return &StarvationGuard{

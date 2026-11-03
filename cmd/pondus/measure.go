@@ -4,12 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"time"
-
 	"pondus-gateway/internal/admission"
 	"pondus-gateway/internal/core"
 	"pondus-gateway/internal/execution"
 	"pondus-gateway/internal/observability"
+	"time"
 )
 
 type outcome struct {
@@ -17,11 +16,6 @@ type outcome struct {
 	err     error
 }
 
-// measureRun runs a batch and collects capacity utilization metrics
-// by sampling periodically every millisecond.
-//
-// The observed maximum and average utilization are estimates that may
-// overlook capacity variations between samples.
 func measureRun(
 	ctx context.Context,
 	runner *execution.Runner,
