@@ -6,6 +6,7 @@ import (
 	"pondus-gateway/internal/admission"
 	"pondus-gateway/internal/core"
 	"pondus-gateway/internal/scheduler"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -655,12 +656,22 @@ func TestRunnerCleanupOnInternalError(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	owner, err := controller.Acquire()
+
+	if err != nil {
+		t.Fatalf("controller remained owned after cleanup: %v", err)
+	}
+
+	if err := owner.Release(); err != nil {
+		t.Fatalf("release reacquired session: %v", err)
+	}
+
 	runner, err := New(controller, cleanupTestExecutor{})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	ops := []core.Operation{
+	operations := []core.Operation{
 		{ID: "a", ClientID: "x", Type: "test", Cost: 1},
 		{ID: "b", ClientID: "x", Type: "test", Cost: 1},
 		{ID: "c", ClientID: "x", Type: "test", Cost: 1},
@@ -672,7 +683,7 @@ func TestRunnerCleanupOnInternalError(t *testing.T) {
 	)
 	defer cancel()
 
-	results, err := runner.Run(ctx, ops)
+	results, err := runner.Run(ctx, operations)
 
 	if err == nil {
 		t.Fatal("expected internal error")
@@ -997,6 +1008,185 @@ func TestRunnerOwnsController(t *testing.T) {
 	}
 
 	if err := controller.FinishWithoutPromotion(external.ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// --- characterization of partial errors  ---
+
+type promotionThenInvalidSelector struct {
+	calls int
+}
+
+type partialPromotionExecutor struct {
+	executed   atomic.Int32
+	unexpected atomic.Int32
+}
+
+func (selector *promotionThenInvalidSelector) Next(pending []core.Operation, _ uint64) int {
+	selector.calls++
+	if selector.calls == 1 {
+		return 1
+	}
+	return len(pending)
+}
+
+func (executor *partialPromotionExecutor) Execute(_ context.Context, operation core.Operation) error {
+	executor.executed.Add(1)
+	if operation.ID != "a" {
+		executor.unexpected.Add(1)
+	}
+	return nil
+}
+
+func TestRunnerPartialPromotionFailure(t *testing.T) {
+	selector := &promotionThenInvalidSelector{}
+
+	controller, err := admission.NewWithSelector(core.Limits{
+		MaxConcurrent: 3,
+		MaxCapacity:   4,
+		MaxQueueSize:  3,
+	}, selector)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	executor := &partialPromotionExecutor{}
+	runner, err := New(controller, executor)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	operations := []core.Operation{
+		{ID: "a", ClientID: "test", Type: "work", Cost: 4},
+		{ID: "b", ClientID: "test", Type: "work", Cost: 3},
+		{ID: "c", ClientID: "test", Type: "work", Cost: 1},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+
+	defer cancel()
+
+	results, err := runner.Run(ctx, operations)
+
+	if err == nil || !strings.Contains(err.Error(), "scheduler returned invalid index") {
+		t.Fatalf("expected scheduler error, got %v", err)
+	}
+
+	if errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("runner ended only because of timeout: %v", err)
+	}
+
+	if selector.calls != 2 {
+		t.Fatalf("selector calls = %d, want 2", selector.calls)
+	}
+
+	if executor.executed.Load() != 1 || executor.unexpected.Load() != 0 {
+		t.Fatalf(
+			"executor calls = %d, unexpected = %d; want (1,0)",
+			executor.executed.Load(), executor.unexpected.Load(),
+		)
+	}
+
+	if len(results) != len(operations) {
+		t.Fatalf(
+			"results = %d, want %d",
+			len(results), len(operations),
+		)
+	}
+
+	for index, want := range []struct {
+		decision admission.Decision
+		state    core.State
+	}{
+		{admission.Started, core.StateCompleted},
+		{admission.Queued, core.StateCancelled},
+		{admission.Queued, core.StateCancelled},
+	} {
+		got := results[index]
+		if got.OperationID != operations[index].ID || got.Decision != want.decision || got.State != want.state {
+			t.Errorf(
+				"result[%d] = %+v, want id=%q decision=%q state=%q",
+				index, got, operations[index].ID, want.decision, want.state,
+			)
+		}
+	}
+
+	if active, queued, used := controller.Snapshot(); active != 0 || queued != 0 || used != 0 {
+		t.Fatalf(
+			"controller after cleanup = (%d,%d,%d), want (0,0,0)",
+			active, queued, used,
+		)
+	}
+
+	owner, err := controller.Acquire()
+	if err != nil {
+		t.Fatalf("controller not available after cleanup: %v", err)
+	}
+
+	if err := owner.Release(); err != nil {
+		t.Fatalf("releasing newly acquired session: %v", err)
+	}
+}
+
+func TestRunnerCancelledBeforeLaunchReleasesSession(t *testing.T) {
+	controller, err := admission.New(core.Limits{
+		MaxConcurrent: 1,
+		MaxCapacity:   1,
+		MaxQueueSize:  3,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	executor := &partialPromotionExecutor{}
+	runner, err := New(controller, executor)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	cancel()
+
+	operations := []core.Operation{
+		{ID: "a", ClientID: "test", Type: "work", Cost: 1},
+		{ID: "b", ClientID: "test", Type: "work", Cost: 1},
+		{ID: "c", ClientID: "test", Type: "work", Cost: 1},
+	}
+
+	results, err := runner.Run(ctx, operations)
+
+	if err != nil {
+		t.Fatalf("pre-launch cancellation: %v", err)
+	}
+
+	if executor.executed.Load() != 0 {
+		t.Fatalf("unexpected executor activity: %d", executor.executed.Load())
+	}
+
+	for index, result := range results {
+		if result.OperationID != operations[index].ID || result.State != core.StateCancelled || !errors.Is(result.Err, context.Canceled) {
+			t.Errorf(
+				"result[%d] = %+v, want cancelled %q",
+				index, result, operations[index].ID,
+			)
+		}
+	}
+
+	if active, queued, used := controller.Snapshot(); active != 0 || queued != 0 || used != 0 {
+		t.Fatalf(
+			"controller after cancellation = (%d,%d,%d)",
+			active, queued, used,
+		)
+	}
+
+	owner, err := controller.Acquire()
+	if err != nil {
+		t.Fatalf("session not released after cancellation: %v", err)
+	}
+
+	if err := owner.Release(); err != nil {
 		t.Fatal(err)
 	}
 }

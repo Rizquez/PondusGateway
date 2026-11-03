@@ -45,15 +45,18 @@ type completion struct {
 }
 
 type currentSession struct {
-	runner      *Runner
-	controller  *admission.Session
-	ctx         context.Context
-	runCtx      context.Context
-	timeout     time.Duration
-	results     []Result
-	positions   map[string]int
-	lifecycles  map[string]*core.Lifecycle
-	started     []core.Operation
+	runner     *Runner
+	controller *admission.Session
+	ctx        context.Context
+	runCtx     context.Context
+	timeout    time.Duration
+	results    []Result
+	positions  map[string]int
+	lifecycles map[string]*core.Lifecycle
+	started    []core.Operation
+	// It includes both pending operations and active accepted operations that
+	// have not yet been resolved by the Runner.
+	// It should not be confused with the number of goroutines currently running.
 	outstanding int
 	finished    chan completion
 	reserved    map[string]struct{}
