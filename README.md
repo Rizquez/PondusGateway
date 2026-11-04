@@ -20,7 +20,7 @@ Pondus Gateway focuses on three priorities:
 | v0.2.0    | Capacity Control | Protect the system from overload                        |
 | v0.3.0    | Scheduling       | Decide which operations to execute                      |
 | v0.4.0    | Execution        | Execute operations concurrently                         |
-| v0.5.0    | MVP              | Simulate workloads, measure results and use the engine |
+| v0.5.0 ** | MVP              | Simulate workloads, measure results and use the engine |
 
 ### After the MVP
 
@@ -31,6 +31,9 @@ Pondus Gateway focuses on three priorities:
 | v0.8.0    | Advanced planning algorithms               |
 | v0.9.0    | Observability and external metrics         |
 | v1.0.0    | First stable version as a reusable library |
+
+> [!NOTE]
+> ** Phase currently in development
 
 ## 🚀 Quick start
 
