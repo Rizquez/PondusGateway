@@ -19,22 +19,21 @@ These priorities guide the engine's design and its planning strategies.
 ## 🚧 Roadmap
 
 | Version | Phase | Objective |
-|---|---|---|
-| v0.1.0 | Fundamentals | Define and represent operations |
-| v0.2.0 | Capacity Control | Protect the system from overload |
-| v0.3.0 | Scheduling | Decide which operations to execute |
-| v0.4.0 | Execution | Execute operations concurrently |
-| v0.5.0 ** | MVP | Simulate workloads, measure results and use the engine |
-
-### After the MVP
-
-| Version | Possible developments |
-|---|---|
-| v0.6.0 | TCP server and test client |
-| v0.7.0 | Dynamic cost estimation |
-| v0.8.0 | Advanced planning algorithms |
-| v0.9.0 | Observability and external metrics |
-| v1.0.0 | First stable version as a reusable library |
+| --- | --- | --- |
+| v0.1.0 | Fundamentals | Define the engine’s basic operations, states and contracts. |
+| v0.2.0 | Capacity control | Implement concurrency, capacity and queue limits to protect against overload. |
+| v0.3.0 | Scheduling | Implement FIFO and Capacity-Fit selection strategies and starvation protection. |
+| v0.4.0 | Execution | Execute operations concurrently and manage their lifecycles. |
+| v0.5.0 | MVP | Integrate the engine, simulate multi-client workloads, compare strategies, measure results and validate its behavior. |
+| v0.6.0 ** | TCP communication | Implement a TCP server and a test client to send workloads and receive results. |
+| v0.7.0 | Concurrent service | Evolve from isolated batch executions to the continuous reception of operations from multiple clients. |
+| v0.8.0 | Advanced overload control | Incorporate appropriate limits and admission policies for concurrent clients, saturation and disconnections. |
+| v0.9.0 | Cost estimation | Incorporate mechanisms to estimate the cost of operations and use those estimates in admission. |
+| v0.10.0 | Advanced scheduling | Evaluate and improve fairness, starvation protection and capacity utilization under heterogeneous loads. |
+| v0.11.0 | Observability | Incorporate more accurate execution and capacity metrics, along with an interface for external querying. |
+| v0.12.0 | Performance and robustness | Conduct reproducible benchmarks, load testing, recovery testing and optimization of critical components. |
+| v0.13.0 | API stabilization | Define a reusable public API, document contracts and consolidate compatibility and configuration. |
+| v1.0.0 | First stable release | Release a documented, tested version with stable contracts for explicitly supported use cases. |
 
 > [!NOTE]
 > ** Phase currently in development
@@ -70,7 +69,7 @@ Allows you to load a configuration from a file:
 go run ./cmd/pondus -client clients/basic.yaml
 ```
 
-The configuration defines admission limits, operations or clients, the executor, and the scheduling strategy.
+The configuration defines admission limits, operations or clients, the executor and the scheduling strategy.
 
 A workload defined using `operations.count` or a list of clients is supported, but not both simultaneously.
 
@@ -156,7 +155,7 @@ The engine uses a Controller to manage:
 - The limits on concurrent operations.
 - The available capacity and reserves for each active operation.
 - The queue of pending operations.
-- Admission, rejection, and promotion decisions.
+- Admission, rejection and promotion decisions.
 
 The Runner coordinates concurrent execution through executors that implement the Executor interface.
 
@@ -276,7 +275,7 @@ pondus-gateway
 
 - **Cooperative Abortion:** Runners must respect context abortion. A timeout does not necessarily terminate an operation. If a runner remains blocked indefinitely, Runner.Run() may not terminate.
 
-- **In-Memory State:** Operations, reservations, and execution states do not have long-term persistence or transactional recovery in the event of a process crash.
+- **In-Memory State:** Operations, reservations and execution states do not have long-term persistence or transactional recovery in the event of a process crash.
 
 ### Admission and scheduling
 
@@ -290,7 +289,7 @@ pondus-gateway
 
 - **Periodic sampling:** The peak reserved capacity is the observed maximum, not necessarily the actual maximum. Average utilization is an estimate that may omit brief variations between samples.
 
-- **Experimental comparisons:** Observed durations and metrics may vary depending on the batch composition, strategy behavior, and runtime planning. The results of a single comparison do not constitute a statistically reproducible benchmark.
+- **Experimental comparisons:** Observed durations and metrics may vary depending on the batch composition, strategy behavior and runtime planning. The results of a single comparison do not constitute a statistically reproducible benchmark.
 
 ### Interfaces
 
