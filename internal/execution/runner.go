@@ -17,8 +17,12 @@ var (
 	ErrNegativeTimeout            = errors.New("negative timeout")
 )
 
-// Result contains the admission decision and the status reached
-// by an operation, along with any errors that may have occurred.
+// Result contains the admission decision and, if the operation was admitted, its execution.
+//
+// A rejected operation retains Decision=Rejected, an empty State, and the error returned by
+// the admission (which may be nil); it does not start a lifecycle.
+//
+// For admitted operations, State and Err describe their individual outcomes.
 type Result struct {
 	OperationID string
 	Decision    admission.Decision
@@ -103,13 +107,16 @@ func (runner *Runner) SetTimeout(duration time.Duration) error {
 
 // Run coordinates a batch and returns its results in the order they were received.
 //
-// It maintains the Controller’s exclusive session until the active executors finish
+// It maintains exclusive ownership of the Controller until the active executors finish
 // and their reservations are released, even if the context is canceled.
 //
 // Therefore, Run may become blocked if an executor ignores the cancellation.
 //
-// Errors from each operation are logged in Result.Err; the Run error corresponds to
-// coordination or cleanup failures, not individual failures.
+// Individual executor failures are reflected in Result.Err and do not by themselves cause
+// a Run error. Its return error indicates failures in coordination or cleanup; it may coexist
+// with valid partial results.
+//
+// Canceling the batch does not necessarily imply a Run return error.
 func (runner *Runner) Run(ctx context.Context, operations []core.Operation) (results []Result, runErr error) {
 	runner.mutex.Lock()
 	if runner.running {
@@ -463,11 +470,11 @@ func (session *currentSession) cleanup(runErr error, cancelRun context.CancelFun
 	return runErr
 }
 
-// completionState classifies the result based on
-// the error returned by Execute.
+// completionState classifies the Execute error: Canceled implies Cancelled,
+// any other error (including DeadlineExceeded) implies Failed and nil implies
+// Completed.
 //
-// An expired context does not, on its own, change
-// the status of an execution that returns nil.
+// The context alone does not determine the final state.
 func completionState(err error) core.State {
 	if errors.Is(err, context.Canceled) {
 		return core.StateCancelled

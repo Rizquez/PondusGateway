@@ -1377,3 +1377,167 @@ func TestRunnerTimeoutRequiresExecutorCooperation(t *testing.T) {
 	finish(t, finished)
 	assertAvailable(t, controller)
 }
+
+// --- semantics and error propagation ---
+
+func TestRunnerDeadlineIsOperationFailure(t *testing.T) {
+	controller, err := admission.New(core.Limits{
+		MaxConcurrent: 1,
+		MaxCapacity:   1,
+		MaxQueueSize:  0,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runner, err := New(controller, &stubExecutor{err: context.DeadlineExceeded})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	results, runErr := runner.Run(context.Background(), []core.Operation{{
+		ID:       "timeout",
+		ClientID: "test",
+		Type:     "work",
+		Cost:     1,
+	}})
+
+	if runErr != nil {
+		t.Fatalf("Run must keep the individual failure separate: %v", runErr)
+	}
+
+	if len(results) != 1 ||
+		results[0].Decision != admission.Started ||
+		results[0].State != core.StateFailed ||
+		!errors.Is(results[0].Err, context.DeadlineExceeded) {
+		t.Fatalf("unexpected timeout error: %+v", results)
+	}
+}
+
+func TestRunnerBatchCancellationDoesNotFailRun(t *testing.T) {
+	controller, err := admission.New(core.Limits{
+		MaxConcurrent: 1,
+		MaxCapacity:   1,
+		MaxQueueSize:  1,
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runner, err := New(controller, &countingExecutor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	results, runErr := runner.Run(ctx, []core.Operation{
+		{ID: "a", ClientID: "test", Type: "work", Cost: 1},
+		{ID: "b", ClientID: "test", Type: "work", Cost: 1},
+	})
+
+	if runErr != nil {
+		t.Fatalf("the requested cancellation should not be a motor error: %v", runErr)
+	}
+
+	if len(results) != 2 {
+		t.Fatalf("results=%d, expected 2", len(results))
+	}
+
+	for _, got := range results {
+		if got.State != core.StateCancelled || !errors.Is(got.Err, context.Canceled) {
+			t.Errorf("operation %q: %+v", got.OperationID, got)
+		}
+	}
+}
+
+func TestRunnerRejectedOperationHasNoExecutionState(t *testing.T) {
+	controller, err := admission.New(core.Limits{
+		MaxConcurrent: 1,
+		MaxCapacity:   1,
+		MaxQueueSize:  0,
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runner, err := New(controller, &countingExecutor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	results, runErr := runner.Run(context.Background(), []core.Operation{
+		{ID: "a", ClientID: "test", Type: "work", Cost: 1},
+		{ID: "b", ClientID: "test", Type: "work", Cost: 1},
+	})
+
+	if runErr != nil {
+		t.Fatal(runErr)
+	}
+
+	if len(results) != 2 ||
+		results[1].OperationID != "b" ||
+		results[1].Decision != admission.Rejected ||
+		results[1].State != "" ||
+		results[1].Err != nil {
+		t.Fatalf("unexpected rejection: %+v", results)
+	}
+}
+
+func TestRunnerInternalErrorPreservesIndividualResults(t *testing.T) {
+	controller, err := admission.NewWithSelector(core.Limits{
+		MaxConcurrent: 2,
+		MaxCapacity:   2,
+		MaxQueueSize:  1,
+	}, invalidIndexSelector{})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runner, err := New(controller, cleanupTestExecutor{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	results, runErr := runner.Run(ctx, []core.Operation{
+		{ID: "a", ClientID: "test", Type: "work", Cost: 1},
+		{ID: "b", ClientID: "test", Type: "work", Cost: 1},
+		{ID: "c", ClientID: "test", Type: "work", Cost: 1},
+	})
+
+	if runErr == nil || !strings.Contains(runErr.Error(), "scheduler returned invalid index") {
+		t.Fatalf("internal scheduler error: %v", runErr)
+	}
+
+	if len(results) != 3 {
+		t.Fatalf("results=%d, expected 3", len(results))
+	}
+
+	if results[0].OperationID != "a" ||
+		results[0].State != core.StateCompleted ||
+		results[0].Err != nil {
+		t.Fatalf("the completed result was lost: %+v", results[0])
+	}
+
+	if results[1].OperationID != "b" ||
+		results[1].State != core.StateCancelled ||
+		!errors.Is(results[1].Err, context.Canceled) {
+		t.Fatalf("the executor's error was lost: %+v", results[1])
+	}
+
+	if results[2].OperationID != "c" || results[2].State != core.StateCancelled || results[2].Err == nil {
+		t.Fatalf("the reason for the cancellation was lost during cleanup: %+v", results[2])
+	}
+
+	if active, queued, used := controller.Snapshot(); active != 0 || queued != 0 || used != 0 {
+		t.Fatalf(
+			"controller not recovered: active=%d queued=%d used=%d",
+			active, queued, used,
+		)
+	}
+}
