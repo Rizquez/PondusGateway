@@ -2,11 +2,17 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"pondus-gateway/internal/admission"
+	"pondus-gateway/internal/core"
+	"pondus-gateway/internal/execution"
 	"strings"
 	"testing"
+	"time"
 )
 
 const validYAML = `
@@ -58,6 +64,18 @@ func writeTestConfig(t *testing.T, content string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func validFileConfigForAudit() FileConfig {
+	var file FileConfig
+	file.Limits.MaxConcurrent = 2
+	file.Limits.MaxCapacity = 2
+	file.Limits.MaxQueueSize = 3
+	file.Operations.Count = 5
+	file.Executor.Type = "sleep"
+	file.Executor.Duration = "1ms"
+	file.Scheduler.Type = "fifo"
+	return file
 }
 
 func TestLoadConfig(t *testing.T) {
@@ -324,5 +342,133 @@ func TestRunComparison(t *testing.T) {
 				strategy, rows, foundResults,
 			)
 		}
+	}
+}
+
+func TestCLIEmptyWorkload(t *testing.T) {
+	t.Run("direct mode rejects zero operations", func(t *testing.T) {
+		var output bytes.Buffer
+
+		err := run(
+			[]string{"-operations=0", "-duration=1ms"},
+			&output,
+		)
+
+		if err == nil {
+			t.Fatal("expected error for empty workload")
+		}
+
+		if !strings.Contains(err.Error(), "operations must be greater than zero") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("YAML requires a nonempty workload", func(t *testing.T) {
+		file := validFileConfigForAudit()
+		file.Operations.Count = 0
+
+		if err := file.validate(); !errors.Is(err, ErrClients) {
+			t.Fatalf("validate() error = %v, want ErrClients", err)
+		}
+	})
+}
+
+func TestCLIAdmissionPrevalidation(t *testing.T) {
+	file := validFileConfigForAudit()
+	file.Limits.MaxConcurrent = 1
+	file.Limits.MaxCapacity = 1
+	file.Limits.MaxQueueSize = 1
+	file.Operations.Count = 3
+
+	if err := file.validate(); !errors.Is(err, ErrAdmissionCapacity) {
+		t.Fatalf("validate() error = %v, want ErrAdmissionCapacity", err)
+	}
+
+	batch := buildBatch(file)
+	if err := validateBatchAdmission(file.limits(), batch); err == nil {
+		t.Fatal("expected rejection when initial admission holds only 2 of 3 operations")
+	}
+
+	file.Limits.MaxQueueSize = 2
+	if err := file.validate(); err != nil {
+		t.Fatalf("valid configuration rejected: %v", err)
+	}
+	if err := validateBatchAdmission(file.limits(), batch); err != nil {
+		t.Fatalf("admissible batch rejected: %v", err)
+	}
+}
+
+func TestCLIClientsPrevalidation(t *testing.T) {
+	file := validFileConfigForAudit()
+	file.Operations.Count = 0
+	file.Limits.MaxConcurrent = 2
+	file.Limits.MaxCapacity = 5
+	file.Limits.MaxQueueSize = 2
+	file.Clients = []ClientConfig{
+		{ID: "a", Operations: 2, Cost: 4},
+		{ID: "b", Operations: 2, Cost: 1},
+	}
+
+	if err := file.validate(); err != nil {
+		t.Fatalf("valid multiclient configuration rejected: %v", err)
+	}
+	batch := buildBatch(file)
+	if len(batch) != 4 {
+		t.Fatalf("batch length = %d, want 4", len(batch))
+	}
+	if err := validateBatchAdmission(file.limits(), batch); err != nil {
+		t.Fatalf("admissible multiclient batch rejected: %v", err)
+	}
+
+	file.Limits.MaxQueueSize = 1
+	if err := file.validate(); err != nil {
+		t.Fatalf("file.validate() should not reject this multiclient batch: %v", err)
+	}
+	if err := validateBatchAdmission(file.limits(), batch); err == nil {
+		t.Fatal("expected rejection after reducing multiclient queue capacity")
+	}
+}
+
+func TestMeasureRunMetricBounds(t *testing.T) {
+	limits := core.Limits{
+		MaxConcurrent: 2,
+		MaxCapacity:   2,
+		MaxQueueSize:  2,
+	}
+
+	controller, err := admission.New(limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	runner, err := execution.New(controller, execution.SleepExecutor{Duration: time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	batch := []core.Operation{
+		{ID: "a", ClientID: "c", Type: "sleep", Cost: 1},
+		{ID: "b", ClientID: "c", Type: "sleep", Cost: 1},
+	}
+
+	results, report, err := measureRun(context.Background(), runner, controller, batch, limits.MaxCapacity)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(results) != len(batch) || report.Total != len(batch) || report.Completed != len(batch) {
+		t.Fatalf("unexpected results: len=%d report=%+v", len(results), report)
+	}
+
+	if report.Duration <= 0 {
+		t.Fatalf("Duration = %v, want > 0", report.Duration)
+	}
+
+	if report.PeakUsed > limits.MaxCapacity {
+		t.Fatalf("PeakUsed = %d, capacity = %d", report.PeakUsed, limits.MaxCapacity)
+	}
+
+	if report.AverageUtilization < 0 || report.AverageUtilization > 100 {
+		t.Fatalf("AverageUtilization = %g, want [0, 100]", report.AverageUtilization)
 	}
 }

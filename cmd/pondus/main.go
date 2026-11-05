@@ -73,8 +73,8 @@ func run(args []string, output io.Writer) error {
 		return fmt.Errorf("capacity must be greater than zero")
 	}
 
-	if *operations < 0 {
-		return fmt.Errorf("operations cannot be negative")
+	if *operations <= 0 {
+		return fmt.Errorf("operations must be greater than zero")
 	}
 
 	if *duration <= 0 {

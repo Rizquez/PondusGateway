@@ -96,3 +96,48 @@ func TestSamplerZeroDenominator(t *testing.T) {
 		t.Fatalf("zero capacity: got %.6f; want 0", got)
 	}
 }
+
+func TestSamplerWeightedIrregularIntervals(t *testing.T) {
+	var sampler Sampler
+	sampler.Observe(6, 0)
+	sampler.Observe(2, 10*time.Millisecond)
+	sampler.Observe(0, 30*time.Millisecond)
+
+	if got := sampler.PeakUsed(); got != 6 {
+		t.Fatalf("PeakUsed() = %d, want 6", got)
+	}
+	// (6*10ms + 2*30ms) / (10*40ms) = 30 %%.
+	if got := sampler.AverageUtilization(10); math.Abs(got-30) > 1e-9 {
+		t.Fatalf("AverageUtilization(10) = %.9f, want 30", got)
+	}
+}
+
+func TestSamplerCannotObserveUnreportedPeak(t *testing.T) {
+	var sampler Sampler
+	sampler.Observe(0, 0)
+	// There may have been a temporary buffer between these readings,
+	// the Sampler only receives the values 0 and cannot reconstruct it
+	sampler.Observe(0, time.Millisecond)
+	sampler.Observe(0, time.Millisecond)
+
+	if got := sampler.PeakUsed(); got != 0 {
+		t.Fatalf("PeakUsed() = %d, want 0", got)
+	}
+	if got := sampler.AverageUtilization(10); got != 0 {
+		t.Fatalf("AverageUtilization(10) = %v, want 0", got)
+	}
+}
+
+func TestSamplerInstantaneousPeakHasNoElapsedWeight(t *testing.T) {
+	var sampler Sampler
+	sampler.Observe(9, 0)
+	sampler.Observe(0, 0)
+	sampler.Observe(0, time.Second)
+
+	if got := sampler.PeakUsed(); got != 9 {
+		t.Fatalf("PeakUsed() = %d, want 9", got)
+	}
+	if got := sampler.AverageUtilization(10); got != 0 {
+		t.Fatalf("AverageUtilization(10) = %v, want 0", got)
+	}
+}
