@@ -11,11 +11,18 @@ import (
 	"time"
 )
 
+// outcome contains the results and any errors
+// from an asynchronous Runner execution.
 type outcome struct {
 	results []execution.Result
 	err     error
 }
 
+// measureRun runs a batch and collects execution and capacity
+// utilization metrics through periodic sampling.
+//
+// The observed maximum and average utilization are estimates
+// that may overlook capacity variations between samples.
 func measureRun(
 	ctx context.Context,
 	runner *execution.Runner,
@@ -64,6 +71,8 @@ func measureRun(
 	}
 }
 
+// printReport displays the execution and capacity utilization
+// metrics for a simulation.
 func printReport(output io.Writer, report observability.Report) {
 	fmt.Fprintln(output, "\n--- Simulation metrics ---")
 	fmt.Fprintf(output, "Total: %d\n", report.Total)

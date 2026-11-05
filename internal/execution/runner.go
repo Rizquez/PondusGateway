@@ -39,11 +39,15 @@ type Runner struct {
 	timeout    time.Duration
 }
 
+// completion captures the result of
+// an operation executed asynchronously.
 type completion struct {
 	id  string
 	err error
 }
 
+// newCurrentSession initializes the state and resources
+// needed to coordinate a Runner execution.
 type currentSession struct {
 	runner     *Runner
 	controller *admission.Session
@@ -150,6 +154,11 @@ func (runner *Runner) Run(ctx context.Context, operations []core.Operation) (res
 	return results, session.wait()
 }
 
+// currentSession maintains the state of a Runner execution.
+//
+// Only the Run goroutine modifies its maps and results.
+//
+// The execution goroutines signal their completion via finished.
 func newCurrentSession(
 	runner *Runner,
 	controller *admission.Session,
@@ -168,6 +177,10 @@ func newCurrentSession(
 	}
 }
 
+// admit processes the batch intake and records the initial results.
+//
+// It identifies the operations that can begin immediately and keeps
+// track of all accepted operations.
 func (session *currentSession) admit(operations []core.Operation) {
 	for index, operation := range operations {
 		decision, err := session.controller.Submit(operation)
@@ -189,6 +202,9 @@ func (session *currentSession) admit(operations []core.Operation) {
 	}
 }
 
+// transition updates the lifecycle and the result of an operation.
+//
+// It requires that its identifier be registered in the session.
 func (session *currentSession) transition(id string, state core.State, reason error) error {
 	lifecycle := session.lifecycles[id]
 	if err := lifecycle.TransitionTo(state); err != nil {
@@ -202,6 +218,8 @@ func (session *currentSession) transition(id string, state core.State, reason er
 	return nil
 }
 
+// cancelPending cancels pending operations and updates their results
+// with the reason for cancellation, without affecting active executions.
 func (session *currentSession) cancelPending(reason error) error {
 	pending, err := session.controller.CancelPending()
 	if err != nil {
@@ -218,6 +236,8 @@ func (session *currentSession) cancelPending(reason error) error {
 	return nil
 }
 
+// cancelBeforeStart cancels the supported operations before starting
+// execution and releases their reservations without promoting new operations.
 func (session *currentSession) cancelBeforeStart(reason error) error {
 	if err := session.cancelPending(reason); err != nil {
 		return err
@@ -238,6 +258,8 @@ func (session *currentSession) cancelBeforeStart(reason error) error {
 	return nil
 }
 
+// launch starts an operation asynchronously and logs its execution
+// so that its completion can be monitored later.
 func (session *currentSession) launch(operation core.Operation) error {
 	if err := session.transition(
 		operation.ID,
@@ -259,6 +281,8 @@ func (session *currentSession) launch(operation core.Operation) error {
 	return nil
 }
 
+// execute applies the configured individual timeout and converts
+// the panics retrieved from the executor into errors.
 func (session *currentSession) execute(operation core.Operation) (err error) {
 	workCtx := session.runCtx
 	cancel := func() {}
@@ -278,6 +302,8 @@ func (session *currentSession) execute(operation core.Operation) (err error) {
 	return session.runner.executor.Execute(workCtx, operation)
 }
 
+// observeCancellation processes the cancellation of the context only once,
+// removing pending operations without directly interrupting active executions.
 func (session *currentSession) observeCancellation() error {
 	if session.cancelled || session.ctx.Err() == nil {
 		return nil
@@ -289,6 +315,9 @@ func (session *currentSession) observeCancellation() error {
 	return session.cancelPending(session.ctx.Err())
 }
 
+// wait monitors completions and cancellations until
+// all accepted operations are resolved or a coordination
+// error is encountered.
 func (session *currentSession) wait() error {
 	for session.outstanding > 0 {
 		if err := session.observeCancellation(); err != nil {
@@ -314,6 +343,10 @@ func (session *currentSession) wait() error {
 	return nil
 }
 
+// complete processes the completion of an operation and frees up its capacity.
+//
+// If the session is still active, it initiates the promoted operations; if it
+// is canceled, it prevents new promotions.
 func (session *currentSession) complete(done completion) error {
 	delete(session.inflight, done.id)
 	if err := session.transition(done.id, completionState(done.err), done.err); err != nil {
@@ -365,6 +398,12 @@ func (session *currentSession) complete(done completion) error {
 	return nil
 }
 
+// cleanup aborts execution, waits for active goroutines and releases
+// resources after an internal error.
+//
+// Combines additional errors using errors.Join.
+//
+// It depends on the executors finishing in order to complete.
 func (session *currentSession) cleanup(runErr error, cancelRun context.CancelFunc) error {
 	cancelRun()
 	pending, err := session.controller.CancelPending()
@@ -421,6 +460,10 @@ func (session *currentSession) cleanup(runErr error, cancelRun context.CancelFun
 	return runErr
 }
 
+// completionState classifies context.Canceled as a cancellation,
+// any other error as a failure, and nil as a successful execution.
+//
+// Time-out errors are considered failures.
 func completionState(err error) core.State {
 	if errors.Is(err, context.Canceled) {
 		return core.StateCancelled

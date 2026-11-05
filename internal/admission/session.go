@@ -7,6 +7,9 @@ import (
 
 var ErrSessionClosed = errors.New("controller session is not active")
 
+// Session represents a controller's exclusive property,
+// allowing it to manage its operations as long as it
+// remains active.
 type Session struct {
 	controller *Controller
 }
@@ -96,6 +99,10 @@ func (session *Session) Release() error {
 	return nil
 }
 
+// finish completes an operation through the owning
+// session, with optional promotion of pending items.
+//
+// Requires a valid session.
 func (session *Session) finish(id string, promote bool) ([]core.Operation, error) {
 	if session == nil || session.controller == nil {
 		return nil, ErrSessionClosed
@@ -112,6 +119,9 @@ func (session *Session) finish(id string, promote bool) ([]core.Operation, error
 	return controller.finishLocked(id, promote)
 }
 
+// validLocked verifies that the session retains ownership of the controller.
+//
+// Requires the controller's mutex to be acquired.
 func (session *Session) validLocked() bool {
 	return session != nil && session.controller != nil && session.controller.owner == session
 }

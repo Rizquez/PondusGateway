@@ -9,11 +9,21 @@ import (
 	"pondus-gateway/internal/observability"
 )
 
+// comparisonResult associates a planning strategy
+// with the metrics obtained during its simulation.
 type comparisonResult struct {
 	Scheduler string
 	Report    observability.Report
 }
 
+// runComparison compares planning strategies using the
+// same set of operations and the same admission limits.
+//
+// Each strategy is executed using a separate controller.
+//
+// The protected strategy uses two lead times by default.
+//
+// The comparison is terminated if any simulation fails.
 func runComparison(path string, output io.Writer) error {
 	file, err := loadConfig(path)
 	if err != nil {
@@ -86,6 +96,8 @@ func runComparison(path string, output io.Writer) error {
 	return nil
 }
 
+// printComparison displays the performance and capacity utilization metrics
+// for the compared strategies.
 func printComparison(output io.Writer, comparisons []comparisonResult) {
 	fmt.Fprintln(output, "Pondus Gateway | Scheduler comparison")
 	fmt.Fprintln(output)

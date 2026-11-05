@@ -13,6 +13,7 @@ import (
 	"pondus-gateway/internal/execution"
 )
 
+// main starts the application
 func main() {
 	if err := run(os.Args[1:], os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -20,6 +21,11 @@ func main() {
 	}
 }
 
+// run processes the arguments and runs the simulation in direct mode,
+// using a YAML configuration or by comparing planning strategies.
+//
+// Comparison mode requires the -client option, which cannot be combined
+// with execution parameters other than -compare.
 func run(args []string, output io.Writer) error {
 	flags := flag.NewFlagSet("pondus", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)

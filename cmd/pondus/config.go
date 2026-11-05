@@ -28,6 +28,8 @@ var (
 	ErrClientID          = errors.New("client ID cannot be empty")
 )
 
+// ClientConfig defines the number of operations
+// and the capacity cost allocated to a client.
 type ClientConfig struct {
 	ID         string `yaml:"id"`
 	Operations int    `yaml:"operations"`
@@ -62,6 +64,9 @@ type FileConfig struct {
 	Clients []ClientConfig `yaml:"clients"`
 }
 
+// loadConfig loads and validates a single YAML document.
+//
+// It rejects unknown fields and additional documents.
 func loadConfig(path string) (FileConfig, error) {
 	var file FileConfig
 
@@ -93,6 +98,8 @@ func loadConfig(path string) (FileConfig, error) {
 	return file, nil
 }
 
+// validate checks the simulation's configuration constraints,
+// including admission limits, the executor, and the scheduler.
 func (file FileConfig) validate() error {
 	limits := file.limits()
 
@@ -141,6 +148,9 @@ func (file FileConfig) validate() error {
 	return nil
 }
 
+// validateWorkload checks the workload type and
+// client constraints without normalizing their
+// identifiers.
 func (file FileConfig) validateWorkload() error {
 	hasClients := len(file.Clients) > 0
 	hasOperations := file.Operations.Count > 0
@@ -180,6 +190,8 @@ func (file FileConfig) validateWorkload() error {
 	return nil
 }
 
+// buildSelector constructs the planning strategy defined
+// in the configuration, including starvation protection.
 func buildSelector(file FileConfig) (scheduler.Selector, error) {
 	switch file.Scheduler.Type {
 	case "fifo":
@@ -199,6 +211,9 @@ func buildSelector(file FileConfig) (scheduler.Selector, error) {
 	}
 }
 
+// runConfigured runs a simulation from a YAML file,
+// first validating the batch's admission and then
+// generating its report.
 func runConfigured(path string, output io.Writer) error {
 	file, err := loadConfig(path)
 	if err != nil {
@@ -246,6 +261,7 @@ func runConfigured(path string, output io.Writer) error {
 	return nil
 }
 
+// limits retrieves the admission limits defined in the configuration.
 func (file FileConfig) limits() core.Limits {
 	return core.Limits{
 		MaxConcurrent: file.Limits.MaxConcurrent,
@@ -254,6 +270,8 @@ func (file FileConfig) limits() core.Limits {
 	}
 }
 
+// newConfiguredRunner creates a separate controller and
+// runner based on a previously validated configuration.
 func newConfiguredRunner(file FileConfig) (*admission.Controller, *execution.Runner, error) {
 	selector, err := buildSelector(file)
 	if err != nil {
@@ -284,6 +302,9 @@ func newConfiguredRunner(file FileConfig) (*admission.Controller, *execution.Run
 	return controller, runner, nil
 }
 
+// buildBatch generates the batch of operations based on the configured mode.
+//
+// If no clients are defined, it uses a default client and unit cost.
 func buildBatch(file FileConfig) []core.Operation {
 	if len(file.Clients) == 0 {
 		batch := make(
@@ -307,6 +328,8 @@ func buildBatch(file FileConfig) []core.Operation {
 	return buildClientBatch(file.Clients)
 }
 
+// buildClientBatch interleaves client operations by rounds,
+// while maintaining their configuration order within each round.
 func buildClientBatch(clients []ClientConfig) []core.Operation {
 	batch := make([]core.Operation, 0)
 	remaining := make([]int, len(clients))
@@ -341,6 +364,9 @@ func buildClientBatch(clients []ClientConfig) []core.Operation {
 	return batch
 }
 
+// validateBatchAdmission checks the initial admission of the
+// entire batch using a separate controller, without executing
+// operations or simulating subsequent capacity releases.
 func validateBatchAdmission(limits core.Limits, batch []core.Operation) error {
 	controller, err := admission.New(limits)
 	if err != nil {

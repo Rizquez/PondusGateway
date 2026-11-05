@@ -156,6 +156,10 @@ func (controller *Controller) Acquire() (*Session, error) {
 	return session, nil
 }
 
+// submitLocked evaluates and accepts an operation for immediate execution or queuing,
+// without checking the controller's ownership.
+//
+// It requires the acquired mutex.
 func (controller *Controller) submitLocked(operation core.Operation) (Decision, error) {
 	if err := operation.Validate(); err != nil {
 		return Rejected, err
@@ -193,6 +197,9 @@ func (controller *Controller) submitLocked(operation core.Operation) (Decision, 
 	return Queued, nil
 }
 
+// finish terminates an active operation, optionally promoting pending operations.
+//
+// Prevents the controller from being modified while it belongs to a session.
 func (controller *Controller) finish(id string, promote bool) ([]core.Operation, error) {
 	controller.mutex.Lock()
 	defer controller.mutex.Unlock()
@@ -202,6 +209,10 @@ func (controller *Controller) finish(id string, promote bool) ([]core.Operation,
 	return controller.finishLocked(id, promote)
 }
 
+// finishLocked releases an active operation and, optionally, promotes pending
+// operations without checking the controller's ownership.
+//
+// Requires the acquired mutex.
 func (controller *Controller) finishLocked(id string, promote bool) ([]core.Operation, error) {
 	if _, exists := controller.active[id]; !exists {
 		return nil, ErrNotActive
@@ -221,6 +232,11 @@ func (controller *Controller) finishLocked(id string, promote bool) ([]core.Oper
 	return controller.promotePending()
 }
 
+// promotePending selects and activates pending operations based on the scheduler
+// and available limits. It returns the promotions that were performed, even if an
+// error occurs afterward.
+//
+// Requires the acquired mutex.
 func (controller *Controller) promotePending() ([]core.Operation, error) {
 	var promoted []core.Operation
 
@@ -249,6 +265,10 @@ func (controller *Controller) promotePending() ([]core.Operation, error) {
 	return promoted, nil
 }
 
+// removePending removes an operation from the queue while preserving
+// the order of the remaining operations.
+//
+// It requires a valid index and the acquired mutex.
 func (controller *Controller) removePending(index int) {
 	copy(controller.pending[index:], controller.pending[index+1:])
 	last := len(controller.pending) - 1
@@ -256,6 +276,10 @@ func (controller *Controller) removePending(index int) {
 	controller.pending = controller.pending[:last]
 }
 
+// cancelPendingLocked removes all pending operations and releases
+// their identifiers, without checking the controller's ownership.
+//
+// Requires the acquired mutex.
 func (controller *Controller) cancelPendingLocked() []core.Operation {
 	cancelled := append(
 		[]core.Operation(nil),
