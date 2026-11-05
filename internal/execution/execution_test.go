@@ -7,6 +7,7 @@ import (
 	"pondus-gateway/internal/core"
 	"pondus-gateway/internal/scheduler"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -1189,4 +1190,190 @@ func TestRunnerCancelledBeforeLaunchReleasesSession(t *testing.T) {
 	if err := owner.Release(); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// --- cancellation and uncooperative executors ---
+
+type nonCooperativeExecutor struct {
+	started  chan struct{}
+	canceled chan struct{}
+	release  chan struct{}
+}
+
+func (executor *nonCooperativeExecutor) Execute(ctx context.Context, _ core.Operation) error {
+	close(executor.started)
+	<-ctx.Done()
+	close(executor.canceled)
+	<-executor.release
+	return nil // Deliberately ignores ctx.Err()
+}
+
+func setup(t *testing.T) (*admission.Controller, *Runner, *nonCooperativeExecutor, func()) {
+	t.Helper()
+
+	controller, err := admission.New(core.Limits{
+		MaxConcurrent: 1,
+		MaxCapacity:   1,
+		MaxQueueSize:  0,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	executor := &nonCooperativeExecutor{
+		started:  make(chan struct{}),
+		canceled: make(chan struct{}),
+		release:  make(chan struct{}),
+	}
+
+	var once sync.Once
+	unblock := func() {
+		once.Do(func() {
+			close(executor.release)
+		})
+	}
+
+	t.Cleanup(unblock) // Never leave an executor blocked if an assertion fails
+
+	runner, err := New(controller, executor)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return controller, runner, executor, unblock
+}
+
+func wait(t *testing.T, ch <-chan struct{}, what string) {
+	t.Helper()
+
+	select {
+	case <-ch:
+	case <-time.After(3 * time.Second):
+		t.Fatalf("timeout pending %s", what)
+	}
+}
+
+func assertReserved(t *testing.T, controller *admission.Controller) {
+	t.Helper()
+
+	active, queued, used := controller.Snapshot()
+	if active != 1 || queued != 0 || used != 1 {
+		t.Fatalf(
+			"premature reservation: active=%d queued=%d used=%d; esperado 1,0,1",
+			active, queued, used,
+		)
+	}
+}
+
+func assertAvailable(t *testing.T, controller *admission.Controller) {
+	t.Helper()
+
+	active, queued, used := controller.Snapshot()
+	if active != 0 || queued != 0 || used != 0 {
+		t.Fatalf(
+			"residual state: active=%d queued=%d used=%d",
+			active, queued, used,
+		)
+	}
+
+	owner, err := controller.Acquire()
+	if err != nil {
+		t.Fatalf("the property was not released: %v", err)
+	}
+
+	if err := owner.Release(); err != nil {
+		t.Fatalf("the new session could not be closed: %v", err)
+	}
+}
+
+type outcome struct {
+	results []Result
+	err     error
+}
+
+func start(runner *Runner, ctx context.Context) <-chan outcome {
+	finished := make(chan outcome, 1)
+	go func() {
+		results, err := runner.Run(ctx, []core.Operation{{
+			ID:       "aud01-a",
+			ClientID: "test",
+			Type:     "test",
+			Cost:     1,
+		}})
+		finished <- outcome{results: results, err: err}
+	}()
+	return finished
+}
+
+func assertNotFinished(t *testing.T, finished <-chan outcome) {
+	t.Helper()
+
+	select {
+	case result := <-finished:
+		t.Fatalf("Run ended before the executor returned control: %+v", result)
+	case <-time.After(30 * time.Millisecond):
+		// Note: This is a limited observation that is still pending; it does not verify the absence of deadlocks
+	}
+}
+
+func finish(t *testing.T, finished <-chan outcome) {
+	t.Helper()
+
+	select {
+	case outcome := <-finished:
+		if outcome.err != nil {
+			t.Fatalf("Run returned an error: %v", outcome.err)
+		}
+		if len(outcome.results) != 1 || outcome.results[0].State != core.StateCompleted {
+			t.Fatalf("unexpected result: %+v", outcome.results)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Runner did not complete after the executor was unlocked")
+	}
+}
+
+func TestRunnerWaitsForNonCooperativeExecutor(t *testing.T) {
+	controller, runner, executor, unblock := setup(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	finished := start(runner, ctx)
+	wait(t, executor.started, "start of the executor")
+	cancel()
+	wait(t, executor.canceled, "cancellation noted by the executor")
+
+	assertReserved(t, controller)
+	assertNotFinished(t, finished)
+	if _, err := runner.Run(context.Background(), nil); !errors.Is(err, ErrRunnerBusy) {
+		t.Fatalf("Second execution: error=%v; expected ErrRunnerBusy", err)
+	}
+	if err := runner.SetTimeout(time.Second); !errors.Is(err, ErrRunnerBusy) {
+		t.Fatalf("SetTimeout during execution: error=%v; expected ErrRunnerBusy", err)
+	}
+	if _, err := controller.Submit(core.Operation{
+		ID:       "external",
+		ClientID: "test",
+		Type:     "test", Cost: 1,
+	}); !errors.Is(err, admission.ErrControllerBusy) {
+		t.Fatalf("External submit: error=%v; expected ErrControllerBusy", err)
+	}
+
+	unblock()
+	finish(t, finished)
+	assertAvailable(t, controller)
+}
+
+func TestRunnerTimeoutRequiresExecutorCooperation(t *testing.T) {
+	controller, runner, executor, unblock := setup(t)
+	if err := runner.SetTimeout(20 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	finished := start(runner, context.Background())
+	wait(t, executor.started, "start of the executor")
+	wait(t, executor.canceled, "executor's deadline")
+
+	assertReserved(t, controller)
+	assertNotFinished(t, finished)
+	unblock()
+	finish(t, finished)
+	assertAvailable(t, controller)
 }

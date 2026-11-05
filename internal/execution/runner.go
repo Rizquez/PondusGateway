@@ -79,10 +79,12 @@ func New(controller *admission.Controller, executor Executor) (*Runner, error) {
 	return &Runner{controller: controller, executor: executor}, nil
 }
 
-// SetTimeout sets the maximum time per operation.
+// SetTimeout sets the timeout per operation, only when Runner is idle.
 //
-// A value of zero disables the limit and the setting can only
-// be changed when the Runner is idle.
+// A value of zero disables the timeout. When the timeout expires, the
+//
+// Execute context is canceled, but Runner continues to wait for the
+// executor to return.
 func (runner *Runner) SetTimeout(duration time.Duration) error {
 	if duration < 0 {
 		return ErrNegativeTimeout
@@ -99,14 +101,15 @@ func (runner *Runner) SetTimeout(duration time.Duration) error {
 	return nil
 }
 
-// Run executes a batch and returns its results in the order they were entered.
+// Run coordinates a batch and returns its results in the order they were received.
 //
-// Requires a controller with no active or pending operations.
-// Individual errors are logged in Result.Err and do not necessarily indicate a
-// Run error.
+// It maintains the Controller’s exclusive session until the active executors finish
+// and their reservations are released, even if the context is canceled.
 //
-// In the event of internal errors, it attempts to cancel the executions, wait
-// for them to complete, and release the reservations.
+// Therefore, Run may become blocked if an executor ignores the cancellation.
+//
+// Errors from each operation are logged in Result.Err; the Run error corresponds to
+// coordination or cleanup failures, not individual failures.
 func (runner *Runner) Run(ctx context.Context, operations []core.Operation) (results []Result, runErr error) {
 	runner.mutex.Lock()
 	if runner.running {
@@ -460,10 +463,11 @@ func (session *currentSession) cleanup(runErr error, cancelRun context.CancelFun
 	return runErr
 }
 
-// completionState classifies context.Canceled as a cancellation,
-// any other error as a failure, and nil as a successful execution.
+// completionState classifies the result based on
+// the error returned by Execute.
 //
-// Time-out errors are considered failures.
+// An expired context does not, on its own, change
+// the status of an execution that returns nil.
 func completionState(err error) core.State {
 	if errors.Is(err, context.Canceled) {
 		return core.StateCancelled
