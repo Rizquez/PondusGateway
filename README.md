@@ -85,7 +85,7 @@ These metrics are calculated through periodic sampling. They may omit brief fluc
 | v0.3.0 | Scheduling | Implement FIFO and Capacity-Fit selection strategies and starvation protection. |
 | v0.4.0 | Execution | Execute operations concurrently and manage their lifecycles. |
 | v0.5.0 | MVP | Integrate the engine, simulate multi-client workloads, compare strategies, measure results and validate its behavior. |
-| v0.6.0 ** | TCP communication | Implement a TCP server and a test client to send workloads and receive results. |
+| v0.6.0 | 📍 TCP communication | Implement a TCP server and a test client to send workloads and receive results. |
 | v0.7.0 | Concurrent service | Evolve from isolated batch executions to the continuous reception of operations from multiple clients. |
 | v0.8.0 | Advanced overload control | Incorporate appropriate limits and admission policies for concurrent clients, saturation and disconnections. |
 | v0.9.0 | Cost estimation | Incorporate mechanisms to estimate the cost of operations and use those estimates in admission. |
@@ -96,7 +96,7 @@ These metrics are calculated through periodic sampling. They may omit brief fluc
 | v1.0.0 | First stable release | Release a documented, tested version with stable contracts for explicitly supported use cases. |
 
 > [!NOTE]
-> ** Currently in the research and development phase.
+> 📍 Currently in the research and development phase.
 
 ## 📂 Project structure
 
