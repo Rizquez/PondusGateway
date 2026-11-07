@@ -39,11 +39,11 @@ Runs the same workload using FIFO, Capacity-Fit and Capacity-Fit with starvation
 ### Makefile
 
 ```bash
-make default         # Default simulation
-make basic-client    # Basic YAML configuration
-make multi-client    # Multi-client simulation
-make compare         # Strategy comparison
-make unit-tests      # Tests
+make run-with-flags
+make run-basic-client
+make run-multi-client
+make run-compare
+make run-unit-tests
 ```
 
 ## ⚙️ Features
