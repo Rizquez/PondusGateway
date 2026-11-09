@@ -125,9 +125,9 @@ func run(args []string, output io.Writer) error {
 	}
 
 	// Reuses operation generation from YAML mode
-	var config FileConfig
-	config.Operations.Count = *operations
-	batch := buildBatch(config)
+	var file FileConfig
+	file.Operations.Count = *operations
+	batch := buildBatch(file)
 
 	fmt.Fprintf(
 		output,
