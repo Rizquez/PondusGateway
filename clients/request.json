@@ -1,0 +1,53 @@
+{
+  "request_id": "req-heavy",
+  "operations": [
+    {
+      "id": "op-1",
+      "client_id": "client-a",
+      "type": "sleep",
+      "cost": 8
+    },
+    {
+      "id": "op-2",
+      "client_id": "client-b",
+      "type": "sleep",
+      "cost": 10
+    },
+    {
+      "id": "op-3",
+      "client_id": "client-c",
+      "type": "sleep",
+      "cost": 1
+    },
+    {
+      "id": "op-4",
+      "client_id": "client-c",
+      "type": "sleep",
+      "cost": 1
+    },
+    {
+      "id": "op-5",
+      "client_id": "client-a",
+      "type": "sleep",
+      "cost": 8
+    },
+    {
+      "id": "op-6",
+      "client_id": "client-c",
+      "type": "sleep",
+      "cost": 2
+    },
+    {
+      "id": "op-7",
+      "client_id": "client-b",
+      "type": "sleep",
+      "cost": 10
+    },
+    {
+      "id": "op-8",
+      "client_id": "client-c",
+      "type": "sleep",
+      "cost": 1
+    }
+  ]
+}

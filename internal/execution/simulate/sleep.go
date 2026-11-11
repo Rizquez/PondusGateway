@@ -1,9 +1,9 @@
-package execution
+package simulate
 
 import (
 	"context"
 	"errors"
-	"pondus-gateway/internal/core"
+	"pondus-gateway/internal/domain"
 	"time"
 )
 
@@ -19,7 +19,7 @@ type SleepExecutor struct {
 //
 // The wait can be interrupted by the context. If the cancellation
 // coincides with the timer expiring, its priority is not guaranteed.
-func (executor SleepExecutor) Execute(ctx context.Context, _ core.Operation) error {
+func (executor SleepExecutor) Execute(ctx context.Context, _ domain.Operation) error {
 	if executor.Duration <= 0 {
 		return ErrInvalidDuration
 	}

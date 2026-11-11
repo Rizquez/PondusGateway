@@ -3,9 +3,9 @@ package execution
 import (
 	"context"
 	"errors"
-	"pondus-gateway/internal/admission"
-	"pondus-gateway/internal/core"
-	"pondus-gateway/internal/scheduler"
+	"pondus-gateway/internal/control/admission"
+	"pondus-gateway/internal/control/scheduler"
+	"pondus-gateway/internal/domain"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -16,10 +16,10 @@ import (
 // --- executor_test ---
 type stubExecutor struct {
 	err      error
-	received core.Operation
+	received domain.Operation
 }
 
-func (stub *stubExecutor) Execute(_ context.Context, operation core.Operation) error {
+func (stub *stubExecutor) Execute(_ context.Context, operation domain.Operation) error {
 	stub.received = operation
 	return stub.err
 }
@@ -36,7 +36,7 @@ func TestExecutorContract(t *testing.T) {
 
 	var executor Executor = stub
 
-	operation := core.Operation{
+	operation := domain.Operation{
 		ID:       "op-1",
 		ClientID: "client-1",
 		Type:     "compute",
@@ -60,135 +60,13 @@ func TestExecutorContract(t *testing.T) {
 	}
 }
 
-// It is verified that all three types implement Executor
-var (
-	_ Executor = SleepExecutor{}
-	_ Executor = CPUExecutor{}
-	_ Executor = FailingExecutor{}
-)
-
-func TestSleepExecutor(t *testing.T) {
-	operation := core.Operation{ID: "op-1"}
-
-	// Correct execution
-	err := (SleepExecutor{
-		Duration: time.Millisecond,
-	}).Execute(context.Background(), operation)
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Invalid duration
-	err = (SleepExecutor{}).Execute(context.Background(), operation)
-
-	if !errors.Is(err, ErrInvalidDuration) {
-		t.Fatalf("got %v, want ErrInvalidDuration", err)
-	}
-
-	// Context canceled
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	err = (SleepExecutor{
-		Duration: time.Hour,
-	}).Execute(ctx, operation)
-
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("got %v, want context.Canceled", err)
-	}
-
-	// Timeout
-	ctx, cancel = context.WithTimeout(
-		context.Background(),
-		time.Millisecond,
-	)
-	defer cancel()
-
-	err = (SleepExecutor{
-		Duration: time.Second,
-	}).Execute(ctx, operation)
-
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("got %v, want context.DeadlineExceeded", err)
-	}
-}
-
-func TestCPUExecutor(t *testing.T) {
-	operation := core.Operation{ID: "op-1"}
-
-	// Correct execution
-	err := (CPUExecutor{
-		Iterations: 1000,
-	}).Execute(context.Background(), operation)
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Invalid number of iterations
-	err = (CPUExecutor{}).Execute(context.Background(), operation)
-
-	if !errors.Is(err, ErrInvalidIterations) {
-		t.Fatalf("got %v, want ErrInvalidIterations", err)
-	}
-
-	// Context canceled
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	err = (CPUExecutor{
-		Iterations: 1000,
-	}).Execute(ctx, operation)
-
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("got %v, want context.Canceled", err)
-	}
-}
-
-func TestFailingExecutor(t *testing.T) {
-	operation := core.Operation{ID: "op-1"}
-	failure := errors.New("controlled failure")
-
-	// Configuration error
-	err := (FailingExecutor{
-		Err: failure,
-	}).Execute(context.Background(), operation)
-
-	if !errors.Is(err, failure) {
-		t.Fatalf("got %v, want controlled failure", err)
-	}
-
-	// Invalid configuration
-	err = (FailingExecutor{}).Execute(
-		context.Background(),
-		operation,
-	)
-
-	if !errors.Is(err, ErrMissingFailure) {
-		t.Fatalf("got %v, want ErrMissingFailure", err)
-	}
-
-	// Context canceled
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	err = (FailingExecutor{
-		Err: failure,
-	}).Execute(ctx, operation)
-
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("got %v, want context.Canceled", err)
-	}
-}
-
 // --- runner_test ---
 type countingExecutor struct {
 	active atomic.Int64
 	max    atomic.Int64
 }
 
-func (counting *countingExecutor) Execute(ctx context.Context, _ core.Operation) error {
+func (counting *countingExecutor) Execute(ctx context.Context, _ domain.Operation) error {
 	now := counting.active.Add(1)
 	defer counting.active.Add(-1)
 
@@ -208,7 +86,7 @@ func (counting *countingExecutor) Execute(ctx context.Context, _ core.Operation)
 }
 
 func TestRunnerConcurrentExecution(t *testing.T) {
-	controller, err := admission.New(core.Limits{
+	controller, err := admission.New(domain.Limits{
 		MaxConcurrent: 2,
 		MaxCapacity:   3,
 		MaxQueueSize:  5,
@@ -224,10 +102,10 @@ func TestRunnerConcurrentExecution(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var operations []core.Operation
+	var operations []domain.Operation
 
 	for i := range 7 {
-		operations = append(operations, core.Operation{
+		operations = append(operations, domain.Operation{
 			ID:       string(rune('a' + i)),
 			ClientID: "client-1",
 			Type:     "compute",
@@ -270,7 +148,7 @@ func TestRunnerConcurrentExecution(t *testing.T) {
 }
 
 func TestRunnerRejectedOperation(t *testing.T) {
-	controller, err := admission.New(core.Limits{
+	controller, err := admission.New(domain.Limits{
 		MaxConcurrent: 1,
 		MaxCapacity:   1,
 		MaxQueueSize:  0,
@@ -285,7 +163,7 @@ func TestRunnerRejectedOperation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	operations := []core.Operation{
+	operations := []domain.Operation{
 		{ID: "a", ClientID: "x", Type: "ping", Cost: 1},
 		{ID: "b", ClientID: "x", Type: "ping", Cost: 1},
 	}
@@ -302,7 +180,7 @@ func TestRunnerRejectedOperation(t *testing.T) {
 }
 
 func TestRunnerCancelledContext(t *testing.T) {
-	controller, err := admission.New(core.Limits{
+	controller, err := admission.New(domain.Limits{
 		MaxConcurrent: 1,
 		MaxCapacity:   1,
 		MaxQueueSize:  2,
@@ -320,7 +198,7 @@ func TestRunnerCancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	operations := []core.Operation{
+	operations := []domain.Operation{
 		{ID: "a", ClientID: "x", Type: "ping", Cost: 1},
 		{ID: "b", ClientID: "x", Type: "ping", Cost: 1},
 	}
@@ -352,7 +230,7 @@ type lifecycleTestExecutor struct {
 	delay time.Duration
 }
 
-func (executor lifecycleTestExecutor) Execute(ctx context.Context, _ core.Operation) error {
+func (executor lifecycleTestExecutor) Execute(ctx context.Context, _ domain.Operation) error {
 	if executor.delay > 0 {
 		timer := time.NewTimer(executor.delay)
 		defer timer.Stop()
@@ -373,19 +251,19 @@ func TestRunnerLifecycle(t *testing.T) {
 		executor  lifecycleTestExecutor
 		timeout   time.Duration
 		cancelled bool
-		wantState core.State
+		wantState domain.State
 		wantErr   error
 	}{
 		{
 			name:      "completed",
-			wantState: core.StateCompleted,
+			wantState: domain.StateCompleted,
 		},
 		{
 			name: "failed",
 			executor: lifecycleTestExecutor{
 				err: errors.New("execution failed"),
 			},
-			wantState: core.StateFailed,
+			wantState: domain.StateFailed,
 		},
 		{
 			name: "timeout",
@@ -393,13 +271,13 @@ func TestRunnerLifecycle(t *testing.T) {
 				delay: time.Second,
 			},
 			timeout:   time.Millisecond,
-			wantState: core.StateFailed,
+			wantState: domain.StateFailed,
 			wantErr:   context.DeadlineExceeded,
 		},
 		{
 			name:      "cancelled before start",
 			cancelled: true,
-			wantState: core.StateCancelled,
+			wantState: domain.StateCancelled,
 			wantErr:   context.Canceled,
 		},
 	}
@@ -407,7 +285,7 @@ func TestRunnerLifecycle(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			controller, err := admission.New(
-				core.Limits{
+				domain.Limits{
 					MaxConcurrent: 1,
 					MaxCapacity:   1,
 					MaxQueueSize:  1,
@@ -437,7 +315,7 @@ func TestRunnerLifecycle(t *testing.T) {
 
 			results, err := runner.Run(
 				ctx,
-				[]core.Operation{
+				[]domain.Operation{
 					{
 						ID:       "op-1",
 						ClientID: "client-1",
@@ -486,7 +364,7 @@ type cancellableExecutor struct {
 	started chan struct{}
 }
 
-func (executor *cancellableExecutor) Execute(ctx context.Context, _ core.Operation) error {
+func (executor *cancellableExecutor) Execute(ctx context.Context, _ domain.Operation) error {
 	executor.runs.Add(1)
 
 	if executor.started != nil {
@@ -508,7 +386,7 @@ func (executor *cancellableExecutor) Execute(ctx context.Context, _ core.Operati
 func newTestRunner(t *testing.T) (*admission.Controller, *Runner, *cancellableExecutor) {
 	t.Helper()
 
-	controller, err := admission.New(core.Limits{
+	controller, err := admission.New(domain.Limits{
 		MaxConcurrent: 1,
 		MaxCapacity:   1,
 		MaxQueueSize:  3,
@@ -530,8 +408,8 @@ func newTestRunner(t *testing.T) (*admission.Controller, *Runner, *cancellableEx
 	return controller, runner, executor
 }
 
-func cancellationTestOp(id string) core.Operation {
-	return core.Operation{
+func cancellationTestOp(id string) domain.Operation {
+	return domain.Operation{
 		ID:       id,
 		ClientID: "client-1",
 		Type:     "compute",
@@ -548,7 +426,7 @@ func TestRunnerOperationTimeout(t *testing.T) {
 
 	results, err := runner.Run(
 		context.Background(),
-		[]core.Operation{
+		[]domain.Operation{
 			cancellationTestOp("a"),
 			cancellationTestOp("b"),
 		},
@@ -585,7 +463,7 @@ func TestRunnerCancelPending(t *testing.T) {
 	go func() {
 		results, err := runner.Run(
 			ctx,
-			[]core.Operation{
+			[]domain.Operation{
 				cancellationTestOp("a"),
 				cancellationTestOp("b"),
 				cancellationTestOp("controller"),
@@ -629,13 +507,13 @@ func TestRunnerCancelPending(t *testing.T) {
 // --- runner_cleanup_test ---
 type invalidIndexSelector struct{}
 
-func (invalidIndexSelector) Next(_ []core.Operation, _ uint64) int {
+func (invalidIndexSelector) Next(_ []domain.Operation, _ uint64) int {
 	return 999
 }
 
 type cleanupTestExecutor struct{}
 
-func (cleanupTestExecutor) Execute(ctx context.Context, operation core.Operation) error {
+func (cleanupTestExecutor) Execute(ctx context.Context, operation domain.Operation) error {
 	if operation.ID == "a" {
 		return nil
 	}
@@ -646,7 +524,7 @@ func (cleanupTestExecutor) Execute(ctx context.Context, operation core.Operation
 
 func TestRunnerCleanupOnInternalError(t *testing.T) {
 	controller, err := admission.NewWithSelector(
-		core.Limits{
+		domain.Limits{
 			MaxConcurrent: 2,
 			MaxCapacity:   2,
 			MaxQueueSize:  1,
@@ -672,7 +550,7 @@ func TestRunnerCleanupOnInternalError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	operations := []core.Operation{
+	operations := []domain.Operation{
 		{ID: "a", ClientID: "x", Type: "test", Cost: 1},
 		{ID: "b", ClientID: "x", Type: "test", Cost: 1},
 		{ID: "c", ClientID: "x", Type: "test", Cost: 1},
@@ -698,15 +576,15 @@ func TestRunnerCleanupOnInternalError(t *testing.T) {
 		t.Fatalf("got %d results, want 3", len(results))
 	}
 
-	if results[0].State != core.StateCompleted {
+	if results[0].State != domain.StateCompleted {
 		t.Fatalf("unexpected state for a: %s", results[0].State)
 	}
 
-	if results[1].State != core.StateCancelled {
+	if results[1].State != domain.StateCancelled {
 		t.Fatalf("unexpected state for b: %s", results[1].State)
 	}
 
-	if results[2].State != core.StateCancelled {
+	if results[2].State != domain.StateCancelled {
 		t.Fatalf("unexpected state for c: %s", results[2].State)
 	}
 
@@ -726,7 +604,7 @@ type blockingExecutor struct {
 	release chan struct{}
 }
 
-func (executor *blockingExecutor) Execute(ctx context.Context, _ core.Operation) error {
+func (executor *blockingExecutor) Execute(ctx context.Context, _ domain.Operation) error {
 	select {
 	case executor.started <- struct{}{}:
 	default:
@@ -741,7 +619,7 @@ func (executor *blockingExecutor) Execute(ctx context.Context, _ core.Operation)
 }
 
 func TestRunnerExclusiveExecution(t *testing.T) {
-	controller, err := admission.New(core.Limits{
+	controller, err := admission.New(domain.Limits{
 		MaxConcurrent: 1,
 		MaxCapacity:   1,
 		MaxQueueSize:  1,
@@ -761,7 +639,7 @@ func TestRunnerExclusiveExecution(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	operation := core.Operation{
+	operation := domain.Operation{
 		ID:       "a",
 		ClientID: "client-1",
 		Type:     "compute",
@@ -783,7 +661,7 @@ func TestRunnerExclusiveExecution(t *testing.T) {
 	go func() {
 		results, err := runner.Run(
 			ctx,
-			[]core.Operation{operation},
+			[]domain.Operation{operation},
 		)
 		finished <- outcome{results: results, err: err}
 	}()
@@ -796,7 +674,7 @@ func TestRunnerExclusiveExecution(t *testing.T) {
 
 	_, err = runner.Run(
 		context.Background(),
-		[]core.Operation{operation},
+		[]domain.Operation{operation},
 	)
 
 	if !errors.Is(err, ErrRunnerBusy) {
@@ -820,7 +698,7 @@ func TestRunnerExclusiveExecution(t *testing.T) {
 			t.Fatal("expected one result")
 		}
 
-		if result.results[0].State != core.StateCancelled {
+		if result.results[0].State != domain.StateCancelled {
 			t.Fatalf("unexpected state: %s", result.results[0].State)
 		}
 
@@ -842,7 +720,7 @@ func TestRunnerExclusiveExecution(t *testing.T) {
 // --- runner_progress_test ---
 type neverPromoteSelector struct{}
 
-func (neverPromoteSelector) Next(_ []core.Operation, _ uint64) int {
+func (neverPromoteSelector) Next(_ []domain.Operation, _ uint64) int {
 	return -1
 }
 
@@ -850,7 +728,7 @@ var _ scheduler.Selector = neverPromoteSelector{}
 
 func TestRunnerNoProgress(t *testing.T) {
 	controller, err := admission.NewWithSelector(
-		core.Limits{
+		domain.Limits{
 			MaxConcurrent: 1,
 			MaxCapacity:   2,
 			MaxQueueSize:  2,
@@ -869,7 +747,7 @@ func TestRunnerNoProgress(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	operations := []core.Operation{
+	operations := []domain.Operation{
 		{
 			ID:       "a",
 			ClientID: "client-1",
@@ -896,11 +774,11 @@ func TestRunnerNoProgress(t *testing.T) {
 		t.Fatalf("got %d results, want 2", len(results))
 	}
 
-	if results[0].State != core.StateCompleted {
+	if results[0].State != domain.StateCompleted {
 		t.Fatalf("operation a: got state %s, want completed", results[0].State)
 	}
 
-	if results[1].State != core.StateCancelled {
+	if results[1].State != domain.StateCancelled {
 		t.Fatalf("operation b: got state %s, want cancelled", results[1].State)
 	}
 
@@ -924,14 +802,14 @@ type ownershipExecutor struct {
 	release chan struct{}
 }
 
-func (executor *ownershipExecutor) Execute(_ context.Context, _ core.Operation) error {
+func (executor *ownershipExecutor) Execute(_ context.Context, _ domain.Operation) error {
 	close(executor.started)
 	<-executor.release
 	return nil
 }
 
 func TestRunnerOwnsController(t *testing.T) {
-	controller, err := admission.New(core.Limits{MaxConcurrent: 1, MaxCapacity: 1, MaxQueueSize: 2})
+	controller, err := admission.New(domain.Limits{MaxConcurrent: 1, MaxCapacity: 1, MaxQueueSize: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -949,7 +827,7 @@ func TestRunnerOwnsController(t *testing.T) {
 	go func() {
 		_, err := runner.Run(
 			context.Background(),
-			[]core.Operation{{
+			[]domain.Operation{{
 				ID:       "owned",
 				ClientID: "test",
 				Type:     "compute",
@@ -965,7 +843,7 @@ func TestRunnerOwnsController(t *testing.T) {
 		t.Fatal("executor did not start")
 	}
 
-	external := core.Operation{
+	external := domain.Operation{
 		ID:       "external",
 		ClientID: "test",
 		Type:     "compute",
@@ -1024,7 +902,7 @@ type partialPromotionExecutor struct {
 	unexpected atomic.Int32
 }
 
-func (selector *promotionThenInvalidSelector) Next(pending []core.Operation, _ uint64) int {
+func (selector *promotionThenInvalidSelector) Next(pending []domain.Operation, _ uint64) int {
 	selector.calls++
 	if selector.calls == 1 {
 		return 1
@@ -1032,7 +910,7 @@ func (selector *promotionThenInvalidSelector) Next(pending []core.Operation, _ u
 	return len(pending)
 }
 
-func (executor *partialPromotionExecutor) Execute(_ context.Context, operation core.Operation) error {
+func (executor *partialPromotionExecutor) Execute(_ context.Context, operation domain.Operation) error {
 	executor.executed.Add(1)
 	if operation.ID != "a" {
 		executor.unexpected.Add(1)
@@ -1043,7 +921,7 @@ func (executor *partialPromotionExecutor) Execute(_ context.Context, operation c
 func TestRunnerPartialPromotionFailure(t *testing.T) {
 	selector := &promotionThenInvalidSelector{}
 
-	controller, err := admission.NewWithSelector(core.Limits{
+	controller, err := admission.NewWithSelector(domain.Limits{
 		MaxConcurrent: 3,
 		MaxCapacity:   4,
 		MaxQueueSize:  3,
@@ -1058,7 +936,7 @@ func TestRunnerPartialPromotionFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	operations := []core.Operation{
+	operations := []domain.Operation{
 		{ID: "a", ClientID: "test", Type: "work", Cost: 4},
 		{ID: "b", ClientID: "test", Type: "work", Cost: 3},
 		{ID: "c", ClientID: "test", Type: "work", Cost: 1},
@@ -1098,11 +976,11 @@ func TestRunnerPartialPromotionFailure(t *testing.T) {
 
 	for index, want := range []struct {
 		decision admission.Decision
-		state    core.State
+		state    domain.State
 	}{
-		{admission.Started, core.StateCompleted},
-		{admission.Queued, core.StateCancelled},
-		{admission.Queued, core.StateCancelled},
+		{admission.Started, domain.StateCompleted},
+		{admission.Queued, domain.StateCancelled},
+		{admission.Queued, domain.StateCancelled},
 	} {
 		got := results[index]
 		if got.OperationID != operations[index].ID || got.Decision != want.decision || got.State != want.state {
@@ -1131,7 +1009,7 @@ func TestRunnerPartialPromotionFailure(t *testing.T) {
 }
 
 func TestRunnerCancelledBeforeLaunchReleasesSession(t *testing.T) {
-	controller, err := admission.New(core.Limits{
+	controller, err := admission.New(domain.Limits{
 		MaxConcurrent: 1,
 		MaxCapacity:   1,
 		MaxQueueSize:  3,
@@ -1150,7 +1028,7 @@ func TestRunnerCancelledBeforeLaunchReleasesSession(t *testing.T) {
 
 	cancel()
 
-	operations := []core.Operation{
+	operations := []domain.Operation{
 		{ID: "a", ClientID: "test", Type: "work", Cost: 1},
 		{ID: "b", ClientID: "test", Type: "work", Cost: 1},
 		{ID: "c", ClientID: "test", Type: "work", Cost: 1},
@@ -1167,7 +1045,7 @@ func TestRunnerCancelledBeforeLaunchReleasesSession(t *testing.T) {
 	}
 
 	for index, result := range results {
-		if result.OperationID != operations[index].ID || result.State != core.StateCancelled || !errors.Is(result.Err, context.Canceled) {
+		if result.OperationID != operations[index].ID || result.State != domain.StateCancelled || !errors.Is(result.Err, context.Canceled) {
 			t.Errorf(
 				"result[%d] = %+v, want cancelled %q",
 				index, result, operations[index].ID,
@@ -1200,7 +1078,7 @@ type nonCooperativeExecutor struct {
 	release  chan struct{}
 }
 
-func (executor *nonCooperativeExecutor) Execute(ctx context.Context, _ core.Operation) error {
+func (executor *nonCooperativeExecutor) Execute(ctx context.Context, _ domain.Operation) error {
 	close(executor.started)
 	<-ctx.Done()
 	close(executor.canceled)
@@ -1211,7 +1089,7 @@ func (executor *nonCooperativeExecutor) Execute(ctx context.Context, _ core.Oper
 func setup(t *testing.T) (*admission.Controller, *Runner, *nonCooperativeExecutor, func()) {
 	t.Helper()
 
-	controller, err := admission.New(core.Limits{
+	controller, err := admission.New(domain.Limits{
 		MaxConcurrent: 1,
 		MaxCapacity:   1,
 		MaxQueueSize:  0,
@@ -1294,7 +1172,7 @@ type outcome struct {
 func start(runner *Runner, ctx context.Context) <-chan outcome {
 	finished := make(chan outcome, 1)
 	go func() {
-		results, err := runner.Run(ctx, []core.Operation{{
+		results, err := runner.Run(ctx, []domain.Operation{{
 			ID:       "aud01-a",
 			ClientID: "test",
 			Type:     "test",
@@ -1324,7 +1202,7 @@ func finish(t *testing.T, finished <-chan outcome) {
 		if outcome.err != nil {
 			t.Fatalf("Run returned an error: %v", outcome.err)
 		}
-		if len(outcome.results) != 1 || outcome.results[0].State != core.StateCompleted {
+		if len(outcome.results) != 1 || outcome.results[0].State != domain.StateCompleted {
 			t.Fatalf("unexpected result: %+v", outcome.results)
 		}
 	case <-time.After(3 * time.Second):
@@ -1349,7 +1227,7 @@ func TestRunnerWaitsForNonCooperativeExecutor(t *testing.T) {
 	if err := runner.SetTimeout(time.Second); !errors.Is(err, ErrRunnerBusy) {
 		t.Fatalf("SetTimeout during execution: error=%v; expected ErrRunnerBusy", err)
 	}
-	if _, err := controller.Submit(core.Operation{
+	if _, err := controller.Submit(domain.Operation{
 		ID:       "external",
 		ClientID: "test",
 		Type:     "test", Cost: 1,
@@ -1381,7 +1259,7 @@ func TestRunnerTimeoutRequiresExecutorCooperation(t *testing.T) {
 // --- semantics and error propagation ---
 
 func TestRunnerDeadlineIsOperationFailure(t *testing.T) {
-	controller, err := admission.New(core.Limits{
+	controller, err := admission.New(domain.Limits{
 		MaxConcurrent: 1,
 		MaxCapacity:   1,
 		MaxQueueSize:  0,
@@ -1395,7 +1273,7 @@ func TestRunnerDeadlineIsOperationFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	results, runErr := runner.Run(context.Background(), []core.Operation{{
+	results, runErr := runner.Run(context.Background(), []domain.Operation{{
 		ID:       "timeout",
 		ClientID: "test",
 		Type:     "work",
@@ -1408,14 +1286,14 @@ func TestRunnerDeadlineIsOperationFailure(t *testing.T) {
 
 	if len(results) != 1 ||
 		results[0].Decision != admission.Started ||
-		results[0].State != core.StateFailed ||
+		results[0].State != domain.StateFailed ||
 		!errors.Is(results[0].Err, context.DeadlineExceeded) {
 		t.Fatalf("unexpected timeout error: %+v", results)
 	}
 }
 
 func TestRunnerBatchCancellationDoesNotFailRun(t *testing.T) {
-	controller, err := admission.New(core.Limits{
+	controller, err := admission.New(domain.Limits{
 		MaxConcurrent: 1,
 		MaxCapacity:   1,
 		MaxQueueSize:  1,
@@ -1432,7 +1310,7 @@ func TestRunnerBatchCancellationDoesNotFailRun(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	results, runErr := runner.Run(ctx, []core.Operation{
+	results, runErr := runner.Run(ctx, []domain.Operation{
 		{ID: "a", ClientID: "test", Type: "work", Cost: 1},
 		{ID: "b", ClientID: "test", Type: "work", Cost: 1},
 	})
@@ -1446,14 +1324,14 @@ func TestRunnerBatchCancellationDoesNotFailRun(t *testing.T) {
 	}
 
 	for _, got := range results {
-		if got.State != core.StateCancelled || !errors.Is(got.Err, context.Canceled) {
+		if got.State != domain.StateCancelled || !errors.Is(got.Err, context.Canceled) {
 			t.Errorf("operation %q: %+v", got.OperationID, got)
 		}
 	}
 }
 
 func TestRunnerRejectedOperationHasNoExecutionState(t *testing.T) {
-	controller, err := admission.New(core.Limits{
+	controller, err := admission.New(domain.Limits{
 		MaxConcurrent: 1,
 		MaxCapacity:   1,
 		MaxQueueSize:  0,
@@ -1468,7 +1346,7 @@ func TestRunnerRejectedOperationHasNoExecutionState(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	results, runErr := runner.Run(context.Background(), []core.Operation{
+	results, runErr := runner.Run(context.Background(), []domain.Operation{
 		{ID: "a", ClientID: "test", Type: "work", Cost: 1},
 		{ID: "b", ClientID: "test", Type: "work", Cost: 1},
 	})
@@ -1487,7 +1365,7 @@ func TestRunnerRejectedOperationHasNoExecutionState(t *testing.T) {
 }
 
 func TestRunnerInternalErrorPreservesIndividualResults(t *testing.T) {
-	controller, err := admission.NewWithSelector(core.Limits{
+	controller, err := admission.NewWithSelector(domain.Limits{
 		MaxConcurrent: 2,
 		MaxCapacity:   2,
 		MaxQueueSize:  1,
@@ -1504,7 +1382,7 @@ func TestRunnerInternalErrorPreservesIndividualResults(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	results, runErr := runner.Run(ctx, []core.Operation{
+	results, runErr := runner.Run(ctx, []domain.Operation{
 		{ID: "a", ClientID: "test", Type: "work", Cost: 1},
 		{ID: "b", ClientID: "test", Type: "work", Cost: 1},
 		{ID: "c", ClientID: "test", Type: "work", Cost: 1},
@@ -1519,18 +1397,18 @@ func TestRunnerInternalErrorPreservesIndividualResults(t *testing.T) {
 	}
 
 	if results[0].OperationID != "a" ||
-		results[0].State != core.StateCompleted ||
+		results[0].State != domain.StateCompleted ||
 		results[0].Err != nil {
 		t.Fatalf("the completed result was lost: %+v", results[0])
 	}
 
 	if results[1].OperationID != "b" ||
-		results[1].State != core.StateCancelled ||
+		results[1].State != domain.StateCancelled ||
 		!errors.Is(results[1].Err, context.Canceled) {
 		t.Fatalf("the executor's error was lost: %+v", results[1])
 	}
 
-	if results[2].OperationID != "c" || results[2].State != core.StateCancelled || results[2].Err == nil {
+	if results[2].OperationID != "c" || results[2].State != domain.StateCancelled || results[2].Err == nil {
 		t.Fatalf("the reason for the cancellation was lost during cleanup: %+v", results[2])
 	}
 

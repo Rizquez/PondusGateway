@@ -1,10 +1,10 @@
-package execution
+package simulate
 
 import (
 	"context"
 	"crypto/sha256"
 	"errors"
-	"pondus-gateway/internal/core"
+	"pondus-gateway/internal/domain"
 	"runtime"
 )
 
@@ -21,7 +21,7 @@ type CPUExecutor struct {
 //
 // Cancellation is cooperative: it checks the context every 256 iterations
 // and upon completion, so the interruption may not be immediate.
-func (executor CPUExecutor) Execute(ctx context.Context, _ core.Operation) error {
+func (executor CPUExecutor) Execute(ctx context.Context, _ domain.Operation) error {
 	if executor.Iterations == 0 {
 		return ErrInvalidIterations
 	}

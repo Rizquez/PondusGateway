@@ -2,7 +2,7 @@ package admission
 
 import (
 	"errors"
-	"pondus-gateway/internal/core"
+	"pondus-gateway/internal/domain"
 )
 
 var ErrSessionClosed = errors.New("controller session is not active")
@@ -18,7 +18,7 @@ type Session struct {
 //
 // It rejects the request with ErrSessionClosed if the session is no
 // longer valid.
-func (session *Session) Submit(operation core.Operation) (Decision, error) {
+func (session *Session) Submit(operation domain.Operation) (Decision, error) {
 	if session == nil || session.controller == nil {
 		return Rejected, ErrSessionClosed
 	}
@@ -35,7 +35,7 @@ func (session *Session) Submit(operation core.Operation) (Decision, error) {
 
 // Finish releases an active operation and promotes pending operations
 // according to the configured planning strategy.
-func (session *Session) Finish(id string) ([]core.Operation, error) {
+func (session *Session) Finish(id string) ([]domain.Operation, error) {
 	return session.finish(id, true)
 }
 
@@ -49,7 +49,7 @@ func (session *Session) FinishWithoutPromotion(id string) error {
 // CancelPending removes pending operations through the owner session.
 //
 // Returns ErrSessionClosed if the session is no longer valid.
-func (session *Session) CancelPending() ([]core.Operation, error) {
+func (session *Session) CancelPending() ([]domain.Operation, error) {
 	if session == nil || session.controller == nil {
 		return nil, ErrSessionClosed
 	}
@@ -103,7 +103,7 @@ func (session *Session) Release() error {
 // session, with optional promotion of pending items.
 //
 // Requires a valid session.
-func (session *Session) finish(id string, promote bool) ([]core.Operation, error) {
+func (session *Session) finish(id string, promote bool) ([]domain.Operation, error) {
 	if session == nil || session.controller == nil {
 		return nil, ErrSessionClosed
 	}

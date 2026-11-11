@@ -1,88 +1,88 @@
-# Load test: 5000 operations distributed among 20 clients
+# Load test: 2500 operations distributed among 20 clients
 limits:
   max_concurrent: 32
   max_capacity: 64
-  max_queue_size: 5000
+  max_queue_size: 2500
 
 clients:
   - id: client-01
-    operations: 250
+    operations: 125
     cost: 1
 
   - id: client-02
-    operations: 250
+    operations: 125
     cost: 2
 
   - id: client-03
-    operations: 250
+    operations: 125
     cost: 3
 
   - id: client-04
-    operations: 250
+    operations: 125
     cost: 4
 
   - id: client-05
-    operations: 250
+    operations: 125
     cost: 5
 
   - id: client-06
-    operations: 250
+    operations: 125
     cost: 6
 
   - id: client-07
-    operations: 250
+    operations: 125
     cost: 7
 
   - id: client-08
-    operations: 250
+    operations: 125
     cost: 8
 
   - id: client-09
-    operations: 250
+    operations: 125
     cost: 9
 
   - id: client-10
-    operations: 250
+    operations: 125
     cost: 10
 
   - id: client-11
-    operations: 250
+    operations: 125
     cost: 12
 
   - id: client-12
-    operations: 250
+    operations: 125
     cost: 1
 
   - id: client-13
-    operations: 250
+    operations: 125
     cost: 3
 
   - id: client-14
-    operations: 250
+    operations: 125
     cost: 5
 
   - id: client-15
-    operations: 250
+    operations: 125
     cost: 7
 
   - id: client-16
-    operations: 250
+    operations: 125
     cost: 9
 
   - id: client-17
-    operations: 250
+    operations: 125
     cost: 11
 
   - id: client-18
-    operations: 250
+    operations: 125
     cost: 2
 
   - id: client-19
-    operations: 250
+    operations: 125
     cost: 4
 
   - id: client-20
-    operations: 250
+    operations: 125
     cost: 6
 
 executor:

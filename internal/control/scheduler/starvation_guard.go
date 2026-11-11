@@ -2,7 +2,7 @@ package scheduler
 
 import (
 	"errors"
-	"pondus-gateway/internal/core"
+	"pondus-gateway/internal/domain"
 	"sync"
 )
 
@@ -48,7 +48,7 @@ func NewStarvationGuard(selector Selector, maxBypasses uint64) (*StarvationGuard
 //
 // The counter is reset when the first operation changes; it may be executed,
 // or the queue becomes empty. It returns -1 if a selection cannot be made.
-func (starvation *StarvationGuard) Next(pending []core.Operation, available uint64) int {
+func (starvation *StarvationGuard) Next(pending []domain.Operation, available uint64) int {
 	starvation.mutex.Lock()
 	defer starvation.mutex.Unlock()
 

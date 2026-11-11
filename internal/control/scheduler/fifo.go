@@ -1,12 +1,12 @@
 package scheduler
 
-import "pondus-gateway/internal/core"
+import "pondus-gateway/internal/domain"
 
 // Selector defines the contract for selecting pending transactions.
 //
 // Next must return a valid index or -1 if none can be selected.
 type Selector interface {
-	Next(pending []core.Operation, available uint64) int
+	Next(pending []domain.Operation, available uint64) int
 }
 
 // FIFO enforces a strict first-in, first-out policy,
@@ -18,7 +18,7 @@ type FIFO struct{}
 //
 // Returns -1 if the queue is empty or the first operation cannot be
 // executed.
-func (FIFO) Next(pending []core.Operation, available uint64) int {
+func (FIFO) Next(pending []domain.Operation, available uint64) int {
 	if len(pending) == 0 {
 		return -1
 	}

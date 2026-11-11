@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"pondus-gateway/internal/admission"
-	"pondus-gateway/internal/core"
+	"pondus-gateway/internal/control/admission"
+	"pondus-gateway/internal/domain"
 	"pondus-gateway/internal/execution"
 	"pondus-gateway/internal/observability"
 	"time"
@@ -27,7 +27,7 @@ func measureRun(
 	ctx context.Context,
 	runner *execution.Runner,
 	controller *admission.Controller,
-	operations []core.Operation,
+	operations []domain.Operation,
 	capacity uint64,
 ) ([]execution.Result, observability.Report, error) {
 	finished := make(chan outcome, 1)

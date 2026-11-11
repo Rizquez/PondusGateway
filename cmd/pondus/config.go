@@ -7,10 +7,11 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"pondus-gateway/internal/admission"
-	"pondus-gateway/internal/core"
+	"pondus-gateway/internal/control/admission"
+	"pondus-gateway/internal/control/scheduler"
+	"pondus-gateway/internal/domain"
 	"pondus-gateway/internal/execution"
-	"pondus-gateway/internal/scheduler"
+	"pondus-gateway/internal/execution/simulate"
 	"strings"
 	"time"
 
@@ -262,8 +263,8 @@ func runConfigured(path string, output io.Writer) error {
 }
 
 // limits retrieves the admission limits defined in the configuration.
-func (file FileConfig) limits() core.Limits {
-	return core.Limits{
+func (file FileConfig) limits() domain.Limits {
+	return domain.Limits{
 		MaxConcurrent: file.Limits.MaxConcurrent,
 		MaxCapacity:   file.Limits.MaxCapacity,
 		MaxQueueSize:  file.Limits.MaxQueueSize,
@@ -290,7 +291,7 @@ func newConfiguredRunner(file FileConfig) (*admission.Controller, *execution.Run
 
 	runner, err := execution.New(
 		controller,
-		execution.SleepExecutor{
+		simulate.SleepExecutor{
 			Duration: duration,
 		},
 	)
@@ -305,16 +306,16 @@ func newConfiguredRunner(file FileConfig) (*admission.Controller, *execution.Run
 // buildBatch generates the batch of operations based on the configured mode.
 //
 // If no clients are defined, it uses a default client and unit cost.
-func buildBatch(file FileConfig) []core.Operation {
+func buildBatch(file FileConfig) []domain.Operation {
 	if len(file.Clients) == 0 {
 		batch := make(
-			[]core.Operation,
+			[]domain.Operation,
 			0,
 			file.Operations.Count,
 		)
 
 		for i := 0; i < file.Operations.Count; i++ {
-			batch = append(batch, core.Operation{
+			batch = append(batch, domain.Operation{
 				ID:       fmt.Sprintf("op-%d", i+1),
 				ClientID: "cli-client",
 				Type:     "sleep",
@@ -330,8 +331,8 @@ func buildBatch(file FileConfig) []core.Operation {
 
 // buildClientBatch interleaves client operations by rounds,
 // while maintaining their configuration order within each round.
-func buildClientBatch(clients []ClientConfig) []core.Operation {
-	batch := make([]core.Operation, 0)
+func buildClientBatch(clients []ClientConfig) []domain.Operation {
+	batch := make([]domain.Operation, 0)
 	remaining := make([]int, len(clients))
 
 	for index, client := range clients {
@@ -345,7 +346,7 @@ func buildClientBatch(clients []ClientConfig) []core.Operation {
 				continue
 			}
 
-			batch = append(batch, core.Operation{
+			batch = append(batch, domain.Operation{
 				ID:       fmt.Sprintf("op-%d", len(batch)+1),
 				ClientID: client.ID,
 				Type:     "sleep",
@@ -367,7 +368,7 @@ func buildClientBatch(clients []ClientConfig) []core.Operation {
 // validateBatchAdmission checks the initial admission of the
 // entire batch using a separate controller, without executing
 // operations or simulating subsequent capacity releases.
-func validateBatchAdmission(limits core.Limits, batch []core.Operation) error {
+func validateBatchAdmission(limits domain.Limits, batch []domain.Operation) error {
 	controller, err := admission.New(limits)
 	if err != nil {
 		return err

@@ -1,9 +1,9 @@
-package execution
+package simulate
 
 import (
 	"context"
 	"errors"
-	"pondus-gateway/internal/core"
+	"pondus-gateway/internal/domain"
 )
 
 var ErrMissingFailure = errors.New("failure error must not be nil")
@@ -16,7 +16,7 @@ type FailingExecutor struct {
 
 // Execute prioritizes validating Err, followed by canceling
 // the context, before returning the configured error.
-func (executor FailingExecutor) Execute(ctx context.Context, _ core.Operation) error {
+func (executor FailingExecutor) Execute(ctx context.Context, _ domain.Operation) error {
 	if executor.Err == nil {
 		return ErrMissingFailure
 	}

@@ -4,9 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"time"
-
 	"pondus-gateway/internal/observability"
+	"time"
 )
 
 // comparisonResult associates a planning strategy

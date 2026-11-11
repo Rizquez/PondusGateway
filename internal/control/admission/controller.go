@@ -3,9 +3,9 @@ package admission
 import (
 	"errors"
 	"fmt"
-	"pondus-gateway/internal/budget"
-	"pondus-gateway/internal/core"
-	"pondus-gateway/internal/scheduler"
+	"pondus-gateway/internal/control/budget"
+	"pondus-gateway/internal/control/scheduler"
+	"pondus-gateway/internal/domain"
 	"sync"
 )
 
@@ -31,23 +31,23 @@ const (
 // and pending transactions and enables safe concurrent access.
 type Controller struct {
 	mutex    sync.Mutex
-	limits   core.Limits
+	limits   domain.Limits
 	capacity *budget.Capacity
 	selector scheduler.Selector
-	active   map[string]core.Operation
-	pending  []core.Operation
+	active   map[string]domain.Operation
+	pending  []domain.Operation
 	known    map[string]struct{}
 	owner    *Session
 }
 
 // New creates a controller with FIFO as the default scheduling strategy.
-func New(limits core.Limits) (*Controller, error) {
+func New(limits domain.Limits) (*Controller, error) {
 	return NewWithSelector(limits, scheduler.FIFO{})
 }
 
 // NewWithSelector creates a controller with the specified limits and selector.
 // Requires valid limits and a non-null selector.
-func NewWithSelector(limits core.Limits, selector scheduler.Selector) (*Controller, error) {
+func NewWithSelector(limits domain.Limits, selector scheduler.Selector) (*Controller, error) {
 	if err := limits.Validate(); err != nil {
 		return nil, err
 	}
@@ -65,7 +65,7 @@ func NewWithSelector(limits core.Limits, selector scheduler.Selector) (*Controll
 		limits:   limits,
 		capacity: max,
 		selector: selector,
-		active:   make(map[string]core.Operation),
+		active:   make(map[string]domain.Operation),
 		pending:  nil,
 		known:    make(map[string]struct{}),
 	}, nil
@@ -73,7 +73,7 @@ func NewWithSelector(limits core.Limits, selector scheduler.Selector) (*Controll
 
 // NewWithStarvationGuard creates a controller with CapacityFit and
 // starvation protection, limited by maxBypasses.
-func NewWithStarvationGuard(limits core.Limits, maxBypasses uint64) (*Controller, error) {
+func NewWithStarvationGuard(limits domain.Limits, maxBypasses uint64) (*Controller, error) {
 	starvation, err := scheduler.NewStarvationGuard(scheduler.CapacityFit{}, maxBypasses)
 	if err != nil {
 		return nil, err
@@ -84,7 +84,7 @@ func NewWithStarvationGuard(limits core.Limits, maxBypasses uint64) (*Controller
 
 // Submit supports an operation for immediate execution or queuing,
 // while adhering to capacity, concurrency and queue limits.
-func (controller *Controller) Submit(operation core.Operation) (Decision, error) {
+func (controller *Controller) Submit(operation domain.Operation) (Decision, error) {
 	controller.mutex.Lock()
 	defer controller.mutex.Unlock()
 	if controller.owner != nil {
@@ -99,7 +99,7 @@ func (controller *Controller) Submit(operation core.Operation) (Decision, error)
 // If a commit fails, it retains the previous changes and returns
 // the transactions that have already been committed along with
 // the error.
-func (controller *Controller) Finish(id string) ([]core.Operation, error) {
+func (controller *Controller) Finish(id string) ([]domain.Operation, error) {
 	return controller.finish(id, true)
 }
 
@@ -111,7 +111,7 @@ func (controller *Controller) FinishWithoutPromotion(id string) error {
 
 // CancelPending removes pending operations and releases their identifiers,
 // without affecting active operations.
-func (controller *Controller) CancelPending() []core.Operation {
+func (controller *Controller) CancelPending() []domain.Operation {
 	controller.mutex.Lock()
 	defer controller.mutex.Unlock()
 	if controller.owner != nil {
@@ -160,7 +160,7 @@ func (controller *Controller) Acquire() (*Session, error) {
 // without checking the controller's ownership.
 //
 // It requires the acquired mutex.
-func (controller *Controller) submitLocked(operation core.Operation) (Decision, error) {
+func (controller *Controller) submitLocked(operation domain.Operation) (Decision, error) {
 	if err := operation.Validate(); err != nil {
 		return Rejected, err
 	}
@@ -200,7 +200,7 @@ func (controller *Controller) submitLocked(operation core.Operation) (Decision, 
 // finish terminates an active operation, optionally promoting pending operations.
 //
 // Prevents the controller from being modified while it belongs to a session.
-func (controller *Controller) finish(id string, promote bool) ([]core.Operation, error) {
+func (controller *Controller) finish(id string, promote bool) ([]domain.Operation, error) {
 	controller.mutex.Lock()
 	defer controller.mutex.Unlock()
 	if controller.owner != nil {
@@ -213,7 +213,7 @@ func (controller *Controller) finish(id string, promote bool) ([]core.Operation,
 // operations without checking the controller's ownership.
 //
 // Requires the acquired mutex.
-func (controller *Controller) finishLocked(id string, promote bool) ([]core.Operation, error) {
+func (controller *Controller) finishLocked(id string, promote bool) ([]domain.Operation, error) {
 	if _, exists := controller.active[id]; !exists {
 		return nil, ErrNotActive
 	}
@@ -237,8 +237,8 @@ func (controller *Controller) finishLocked(id string, promote bool) ([]core.Oper
 // error occurs afterward.
 //
 // Requires the acquired mutex.
-func (controller *Controller) promotePending() ([]core.Operation, error) {
-	var promoted []core.Operation
+func (controller *Controller) promotePending() ([]domain.Operation, error) {
+	var promoted []domain.Operation
 
 	for len(controller.pending) > 0 && len(controller.active) < controller.limits.MaxConcurrent {
 		_, available := controller.capacity.Snapshot()
@@ -272,7 +272,7 @@ func (controller *Controller) promotePending() ([]core.Operation, error) {
 func (controller *Controller) removePending(index int) {
 	copy(controller.pending[index:], controller.pending[index+1:])
 	last := len(controller.pending) - 1
-	controller.pending[last] = core.Operation{}
+	controller.pending[last] = domain.Operation{}
 	controller.pending = controller.pending[:last]
 }
 
@@ -280,9 +280,9 @@ func (controller *Controller) removePending(index int) {
 // their identifiers, without checking the controller's ownership.
 //
 // Requires the acquired mutex.
-func (controller *Controller) cancelPendingLocked() []core.Operation {
+func (controller *Controller) cancelPendingLocked() []domain.Operation {
 	cancelled := append(
-		[]core.Operation(nil),
+		[]domain.Operation(nil),
 		controller.pending...,
 	)
 
@@ -291,7 +291,7 @@ func (controller *Controller) cancelPendingLocked() []core.Operation {
 	}
 
 	for index := range controller.pending {
-		controller.pending[index] = core.Operation{}
+		controller.pending[index] = domain.Operation{}
 	}
 
 	controller.pending = nil

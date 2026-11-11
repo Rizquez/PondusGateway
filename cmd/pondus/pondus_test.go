@@ -7,9 +7,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"pondus-gateway/internal/admission"
-	"pondus-gateway/internal/core"
+	"pondus-gateway/internal/control/admission"
+	"pondus-gateway/internal/domain"
 	"pondus-gateway/internal/execution"
+	"pondus-gateway/internal/execution/simulate"
 	"strings"
 	"testing"
 	"time"
@@ -430,7 +431,7 @@ func TestCLIClientsPrevalidation(t *testing.T) {
 }
 
 func TestMeasureRunMetricBounds(t *testing.T) {
-	limits := core.Limits{
+	limits := domain.Limits{
 		MaxConcurrent: 2,
 		MaxCapacity:   2,
 		MaxQueueSize:  2,
@@ -441,12 +442,12 @@ func TestMeasureRunMetricBounds(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	runner, err := execution.New(controller, execution.SleepExecutor{Duration: time.Millisecond})
+	runner, err := execution.New(controller, simulate.SleepExecutor{Duration: time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	batch := []core.Operation{
+	batch := []domain.Operation{
 		{ID: "a", ClientID: "c", Type: "sleep", Cost: 1},
 		{ID: "b", ClientID: "c", Type: "sleep", Cost: 1},
 	}

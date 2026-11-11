@@ -2,7 +2,7 @@ package execution
 
 import (
 	"context"
-	"pondus-gateway/internal/core"
+	"pondus-gateway/internal/domain"
 )
 
 // Executor defines the contract for executing an operation.
@@ -18,5 +18,5 @@ import (
 // If Execute returns nil, it is considered complete, even if the
 // context has expired.
 type Executor interface {
-	Execute(ctx context.Context, operation core.Operation) error
+	Execute(ctx context.Context, operation domain.Operation) error
 }

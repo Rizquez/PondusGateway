@@ -1,4 +1,4 @@
-package core
+package domain
 
 // State represents the status of an
 // operation throughout its lifecycle.

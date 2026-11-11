@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"pondus-gateway/internal/admission"
-	"pondus-gateway/internal/core"
+	"pondus-gateway/internal/control/admission"
+	"pondus-gateway/internal/domain"
 	"sync"
 	"time"
 )
@@ -26,7 +26,7 @@ var (
 type Result struct {
 	OperationID string
 	Decision    admission.Decision
-	State       core.State
+	State       domain.State
 	Err         error
 }
 
@@ -60,8 +60,8 @@ type currentSession struct {
 	timeout    time.Duration
 	results    []Result
 	positions  map[string]int
-	lifecycles map[string]*core.Lifecycle
-	started    []core.Operation
+	lifecycles map[string]*domain.Lifecycle
+	started    []domain.Operation
 	// It includes both pending operations and active accepted operations that
 	// have not yet been resolved by the Runner.
 	// It should not be confused with the number of goroutines currently running.
@@ -117,7 +117,7 @@ func (runner *Runner) SetTimeout(duration time.Duration) error {
 // with valid partial results.
 //
 // Canceling the batch does not necessarily imply a Run return error.
-func (runner *Runner) Run(ctx context.Context, operations []core.Operation) (results []Result, runErr error) {
+func (runner *Runner) Run(ctx context.Context, operations []domain.Operation) (results []Result, runErr error) {
 	runner.mutex.Lock()
 	if runner.running {
 		runner.mutex.Unlock()
@@ -180,8 +180,8 @@ func newCurrentSession(
 	return &currentSession{
 		runner: runner, controller: controller, ctx: ctx, runCtx: runCtx, timeout: timeout,
 		results: make([]Result, count), positions: make(map[string]int, count),
-		lifecycles: make(map[string]*core.Lifecycle, count),
-		started:    make([]core.Operation, 0), finished: make(chan completion, count),
+		lifecycles: make(map[string]*domain.Lifecycle, count),
+		started:    make([]domain.Operation, 0), finished: make(chan completion, count),
 		reserved: make(map[string]struct{}), inflight: make(map[string]struct{}),
 		doneCh: ctx.Done(),
 	}
@@ -191,7 +191,7 @@ func newCurrentSession(
 //
 // It identifies the operations that can begin immediately and keeps
 // track of all accepted operations.
-func (session *currentSession) admit(operations []core.Operation) {
+func (session *currentSession) admit(operations []domain.Operation) {
 	for index, operation := range operations {
 		decision, err := session.controller.Submit(operation)
 		session.results[index] = Result{OperationID: operation.ID, Decision: decision, Err: err}
@@ -201,8 +201,8 @@ func (session *currentSession) admit(operations []core.Operation) {
 		}
 
 		session.positions[operation.ID] = index
-		session.lifecycles[operation.ID] = core.NewLifecycle()
-		session.results[index].State = core.StatePending
+		session.lifecycles[operation.ID] = domain.NewLifecycle()
+		session.results[index].State = domain.StatePending
 		session.outstanding++
 
 		if decision == admission.Started {
@@ -215,7 +215,7 @@ func (session *currentSession) admit(operations []core.Operation) {
 // transition updates the lifecycle and the result of an operation.
 //
 // It requires that its identifier be registered in the session.
-func (session *currentSession) transition(id string, state core.State, reason error) error {
+func (session *currentSession) transition(id string, state domain.State, reason error) error {
 	lifecycle := session.lifecycles[id]
 	if err := lifecycle.TransitionTo(state); err != nil {
 		return err
@@ -237,7 +237,7 @@ func (session *currentSession) cancelPending(reason error) error {
 	}
 
 	for _, operation := range pending {
-		if err := session.transition(operation.ID, core.StateCancelled, reason); err != nil {
+		if err := session.transition(operation.ID, domain.StateCancelled, reason); err != nil {
 			return err
 		}
 		session.outstanding--
@@ -254,7 +254,7 @@ func (session *currentSession) cancelBeforeStart(reason error) error {
 	}
 
 	for _, operation := range session.started {
-		if err := session.transition(operation.ID, core.StateCancelled, reason); err != nil {
+		if err := session.transition(operation.ID, domain.StateCancelled, reason); err != nil {
 			return err
 		}
 
@@ -270,10 +270,10 @@ func (session *currentSession) cancelBeforeStart(reason error) error {
 
 // launch starts an operation asynchronously and logs its execution
 // so that its completion can be monitored later.
-func (session *currentSession) launch(operation core.Operation) error {
+func (session *currentSession) launch(operation domain.Operation) error {
 	if err := session.transition(
 		operation.ID,
-		core.StateRunning,
+		domain.StateRunning,
 		session.results[session.positions[operation.ID]].Err,
 	); err != nil {
 		return err
@@ -293,7 +293,7 @@ func (session *currentSession) launch(operation core.Operation) error {
 
 // execute applies the configured individual timeout and converts
 // the panics retrieved from the executor into errors.
-func (session *currentSession) execute(operation core.Operation) (err error) {
+func (session *currentSession) execute(operation domain.Operation) (err error) {
 	workCtx := session.runCtx
 	cancel := func() {}
 
@@ -426,7 +426,7 @@ func (session *currentSession) cleanup(runErr error, cancelRun context.CancelFun
 		session.results[index].Err = runErr
 
 		if lifecycle := session.lifecycles[operation.ID]; lifecycle != nil {
-			if err := lifecycle.TransitionTo(core.StateCancelled); err != nil {
+			if err := lifecycle.TransitionTo(domain.StateCancelled); err != nil {
 				runErr = errors.Join(runErr, err)
 			}
 			session.results[index].State = lifecycle.State()
@@ -457,8 +457,8 @@ func (session *currentSession) cleanup(runErr error, cancelRun context.CancelFun
 		}
 
 		lifecycle := session.lifecycles[id]
-		if lifecycle != nil && lifecycle.State() == core.StatePending {
-			if err := lifecycle.TransitionTo(core.StateCancelled); err != nil {
+		if lifecycle != nil && lifecycle.State() == domain.StatePending {
+			if err := lifecycle.TransitionTo(domain.StateCancelled); err != nil {
 				runErr = errors.Join(runErr, err)
 			}
 
@@ -475,14 +475,14 @@ func (session *currentSession) cleanup(runErr error, cancelRun context.CancelFun
 // Completed.
 //
 // The context alone does not determine the final state.
-func completionState(err error) core.State {
+func completionState(err error) domain.State {
 	if errors.Is(err, context.Canceled) {
-		return core.StateCancelled
+		return domain.StateCancelled
 	}
 
 	if err != nil {
-		return core.StateFailed
+		return domain.StateFailed
 	}
 
-	return core.StateCompleted
+	return domain.StateCompleted
 }

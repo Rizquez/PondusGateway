@@ -1,8 +1,8 @@
 package observability
 
 import (
-	"pondus-gateway/internal/admission"
-	"pondus-gateway/internal/core"
+	"pondus-gateway/internal/control/admission"
+	"pondus-gateway/internal/domain"
 	"pondus-gateway/internal/execution"
 	"time"
 )
@@ -81,13 +81,13 @@ func Summarize(results []execution.Result, duration time.Duration) Report {
 		}
 
 		switch result.State {
-		case core.StateCompleted:
+		case domain.StateCompleted:
 			report.Completed++
 
-		case core.StateFailed:
+		case domain.StateFailed:
 			report.Failed++
 
-		case core.StateCancelled:
+		case domain.StateCancelled:
 			report.Cancelled++
 		}
 	}

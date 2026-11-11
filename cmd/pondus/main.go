@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"time"
-
-	"pondus-gateway/internal/admission"
-	"pondus-gateway/internal/core"
+	"pondus-gateway/internal/control/admission"
+	"pondus-gateway/internal/domain"
 	"pondus-gateway/internal/execution"
+	"pondus-gateway/internal/execution/simulate"
+	"time"
 )
 
 // main starts the application
@@ -31,23 +31,28 @@ func run(args []string, output io.Writer) error {
 	flags.SetOutput(io.Discard)
 
 	concurrency := flags.Int(
-		"concurrency", 4,
+		"concurrency",
+		4,
 		"maximum concurrent operations",
 	)
 	capacity := flags.Uint64(
-		"capacity", 10,
+		"capacity",
+		10,
 		"maximum available capacity",
 	)
 	operations := flags.Int(
-		"operations", 20,
+		"operations",
+		20,
 		"number of operations to generate",
 	)
 	duration := flags.Duration(
-		"duration", 100*time.Millisecond,
+		"duration",
+		100*time.Millisecond,
 		"simulated operation duration",
 	)
 	configPath := flags.String(
-		"client", "",
+		"client",
+		"",
 		"path to YAML configuration file",
 	)
 
@@ -105,7 +110,7 @@ func run(args []string, output io.Writer) error {
 		return fmt.Errorf("-compare requires -client")
 	}
 
-	controller, err := admission.New(core.Limits{
+	controller, err := admission.New(domain.Limits{
 		MaxConcurrent: *concurrency,
 		MaxCapacity:   *capacity,
 		MaxQueueSize:  *operations,
@@ -115,7 +120,7 @@ func run(args []string, output io.Writer) error {
 		return err
 	}
 
-	executor := execution.SleepExecutor{
+	executor := simulate.SleepExecutor{
 		Duration: *duration,
 	}
 

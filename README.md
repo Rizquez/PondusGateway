@@ -31,20 +31,38 @@ Allows you to configure admission limits, the executor, the strategy and a workl
 ### Strategy comparison
 
 ```bash
-go run ./cmd/pondus -client clients/basic.yaml -compare
+go run ./cmd/pondus -client clients/multiple.yaml -compare
 ```
 
 Runs the same workload using FIFO, Capacity-Fit and Capacity-Fit with starvation protection, using separate controllers.
 
-### Makefile
+### TCP server and client
+
+Start the server in one terminal:
 
 ```bash
-make run-with-flags
-make run-basic-client
-make run-multi-client
-make run-compare
-make run-unit-tests
+go run ./cmd/pondus-server -addr=127.0.0.1:9000 -concurrency=4 -capacity=10 -queue=20 -scheduler=capacity-fit -duration=100ms
 ```
+
+Then send a workload from another terminal:
+
+```bash
+go run ./cmd/pondus-client -addr=127.0.0.1:9000 -file=clients/request.json
+```
+
+The server applies the configured admission limits and scheduler, and the client receives the results of the submitted workload.
+
+### Makefile
+
+| Command | Description |
+| --- | --- |
+| `make test` | Runs the tests 20 times, the tests with the race detector 5 times, and `go vet`. |
+| `make run-flags` | Direct execution with command-line flags. |
+| `make run-basic` | Runs the `clients/basic.yaml` scenario. |
+| `make run-multiple` | Runs the `clients/multiple.yaml` scenario. |
+| `make run-compare` | Compares all strategies using `clients/multiple.yaml`. |
+| `make run-server` | Starts the TCP server on `127.0.0.1:9000`. |
+| `make run-client` | Sends `clients/request.json` to the server. |
 
 ## ⚙️ Features
 
@@ -98,58 +116,6 @@ These metrics are calculated through periodic sampling. They may omit brief fluc
 > [!NOTE]
 > 📍 Currently in the research and development phase.
 
-## 📂 Project structure
-
-```text
-pondus-gateway
-├── clients
-│   ├── basic.yaml
-│   └── multiple.yaml
-├── cmd
-│   ├── pondus                      # Command-Line interface, configuration and simulations
-│   │   ├── compare.go
-│   │   ├── config.go
-│   │   ├── main.go
-│   │   ├── measure.go
-│   │   └── pondus_test.go
-│   └── .gitkeep
-├── internal
-│   ├── admission                   # Admission, queue, promotions and exclusive sessions
-│   │   ├── admission_test.go
-│   │   ├── controller.go
-│   │   └── session.go
-│   ├── budget                      # Capacity reservations and releases
-│   │   ├── capacity_test.go
-│   │   └── capacity.go
-│   ├── core                        # Operations, states, lifecycles and limits
-│   │   ├── core_test.go
-│   │   ├── lifecycle.go
-│   │   ├── limits.go
-│   │   ├── operation.go
-│   │   └── state.go
-│   ├── execution                   # Concurrent execution, results and recovery
-│   │   ├── cpu.go
-│   │   ├── execution_test.go
-│   │   ├── executor.go
-│   │   ├── failing.go
-│   │   ├── runner.go
-│   │   └── sleep.go
-│   ├── observability               # Results summary and metrics calculation
-│   │   ├── metrics_test.go
-│   │   └── metrics.go
-│   └── scheduler                   # Strategies for selecting pending operations
-│       ├── capacity_fit.go
-│       ├── fifo.go
-│       ├── scheduler_test.go
-│       └── starvation_guard.go
-├── .gitignore
-├── go.mod
-├── go.sum
-├── LICENSE
-├── Makefile
-└── README.md
-```
-
 ## ⚠️ Limitations
 
 - **Batch execution:** Does not support the continuous addition of operations while a Runner is executing its batch.
@@ -159,6 +125,7 @@ pondus-gateway
 - **Starvation:** StarvationGuard limits preemptions but does not guarantee a maximum wait time.
 - **Metrics accuracy:** Sampling may omit brief spikes and performance comparisons may vary across runs.
 - **Interfaces:** The MVP does not expose network services and the YAML configuration only allows selecting the sleep executor.
+- **TCP disconnects:** The server interprets the closure of the write channel (`CloseWrite()`) as a cancellation request, just like a full disconnect. The client must keep the connection open until it receives a response. Cancellation is cooperative and resources remain reserved until execution completes.
 
 ## 🔒 License
 

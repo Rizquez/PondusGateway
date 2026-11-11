@@ -1,11 +1,11 @@
-# Load test: 2000 operations by a single client
+# Load test: 500 operations by a single client
 limits:
   max_concurrent: 32
   max_capacity: 64
-  max_queue_size: 2000
+  max_queue_size: 500
 
 operations:
-  count: 2000
+  count: 500
 
 executor:
   type: sleep

@@ -2,8 +2,8 @@ package observability
 
 import (
 	"math"
-	"pondus-gateway/internal/admission"
-	"pondus-gateway/internal/core"
+	"pondus-gateway/internal/control/admission"
+	"pondus-gateway/internal/domain"
 	"pondus-gateway/internal/execution"
 	"testing"
 	"time"
@@ -19,11 +19,11 @@ func TestSummarize(t *testing.T) {
 		{
 			name: "mixed results",
 			results: []execution.Result{
-				{Decision: admission.Started, State: core.StateCompleted},
-				{Decision: admission.Queued, State: core.StateCompleted},
-				{Decision: admission.Started, State: core.StateFailed},
-				{Decision: admission.Started, State: core.StateCancelled},
-				{Decision: admission.Rejected, State: core.StateFailed},
+				{Decision: admission.Started, State: domain.StateCompleted},
+				{Decision: admission.Queued, State: domain.StateCompleted},
+				{Decision: admission.Started, State: domain.StateFailed},
+				{Decision: admission.Started, State: domain.StateCancelled},
+				{Decision: admission.Rejected, State: domain.StateFailed},
 			},
 			duration: 2 * time.Second,
 			want: Report{
@@ -38,8 +38,8 @@ func TestSummarize(t *testing.T) {
 		{
 			name: "non-terminal states are not counted",
 			results: []execution.Result{
-				{Decision: admission.Started, State: core.StateRunning},
-				{Decision: admission.Queued, State: core.StatePending},
+				{Decision: admission.Started, State: domain.StateRunning},
+				{Decision: admission.Queued, State: domain.StatePending},
 			},
 			want: Report{Total: 2},
 		},

@@ -1,4 +1,4 @@
-package core
+package domain
 
 import "testing"
 
@@ -134,37 +134,28 @@ func TestLimitsValidate(t *testing.T) {
 }
 
 func TestStateTransitions(t *testing.T) {
-	tests := []struct {
-		from, to State
-		valid    bool
-	}{
-		{StatePending, StateRunning, true},
-		{StatePending, StateCancelled, true},
-		{StateRunning, StateCompleted, true},
-		{StateRunning, StateFailed, true},
-		{StateRunning, StateCancelled, true},
-
-		{StatePending, StateCompleted, false},
-		{StateCompleted, StateRunning, false},
-		{StateFailed, StateRunning, false},
-		{StateCancelled, StateRunning, false},
-		{StateRunning, StateRunning, false},
-		{State("unknown"), StateRunning, false},
+	states := []State{
+		StatePending, StateRunning, StateCompleted,
+		StateFailed, StateCancelled, State("unknown"),
+	}
+	valid := map[[2]State]bool{
+		{StatePending, StateRunning}:   true,
+		{StatePending, StateCancelled}: true,
+		{StateRunning, StateCompleted}: true,
+		{StateRunning, StateFailed}:    true,
+		{StateRunning, StateCancelled}: true,
 	}
 
-	for _, test := range tests {
-		t.Run(string(test.from)+"_to_"+string(test.to),
-			func(t *testing.T) {
-				got := test.from.CanTransitionTo(test.to)
-
-				if got != test.valid {
-					t.Fatalf(
-						"got %v, want %v",
-						got, test.valid,
-					)
-				}
-			},
-		)
+	for _, from := range states {
+		for _, to := range states {
+			want := valid[[2]State{from, to}]
+			if got := from.CanTransitionTo(to); got != want {
+				t.Errorf(
+					"%s -> %s: got %v, want %v",
+					from, to, got, want,
+				)
+			}
+		}
 	}
 }
 

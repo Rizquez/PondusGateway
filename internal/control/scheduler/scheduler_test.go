@@ -1,7 +1,7 @@
 package scheduler
 
 import (
-	"pondus-gateway/internal/core"
+	"pondus-gateway/internal/domain"
 	"reflect"
 	"sync"
 	"testing"
@@ -10,21 +10,21 @@ import (
 func TestFIFO(t *testing.T) {
 	tests := []struct {
 		name      string
-		pending   []core.Operation
+		pending   []domain.Operation
 		available uint64
 		want      int
 	}{
 		{"empty queue", nil, 10, -1},
-		{"first fits", []core.Operation{{ID: "a", Cost: 3}, {ID: "b", Cost: 1}}, 4, 0},
-		{"first blocks smaller", []core.Operation{{ID: "a", Cost: 8}, {ID: "b", Cost: 1}}, 4, -1},
-		{"exact capacity", []core.Operation{{ID: "a", Cost: 5}}, 5, 0},
-		{"no capacity", []core.Operation{{ID: "a", Cost: 1}}, 0, -1},
-		{"excess capacity", []core.Operation{{ID: "a", Cost: 2}}, 100, 0},
+		{"first fits", []domain.Operation{{ID: "a", Cost: 3}, {ID: "b", Cost: 1}}, 4, 0},
+		{"first blocks smaller", []domain.Operation{{ID: "a", Cost: 8}, {ID: "b", Cost: 1}}, 4, -1},
+		{"exact capacity", []domain.Operation{{ID: "a", Cost: 5}}, 5, 0},
+		{"no capacity", []domain.Operation{{ID: "a", Cost: 1}}, 0, -1},
+		{"excess capacity", []domain.Operation{{ID: "a", Cost: 2}}, 100, 0},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			before := append([]core.Operation(nil), test.pending...)
+			before := append([]domain.Operation(nil), test.pending...)
 			got := (FIFO{}).Next(test.pending, test.available)
 
 			if got != test.want {
@@ -44,21 +44,21 @@ func TestFIFO(t *testing.T) {
 func TestCapacityFit(t *testing.T) {
 	tests := []struct {
 		name      string
-		pending   []core.Operation
+		pending   []domain.Operation
 		available uint64
 		want      int
 	}{
 		{"empty queue", nil, 10, -1},
-		{"none fits", []core.Operation{{ID: "a", Cost: 9}, {ID: "b", Cost: 8}}, 3, -1},
-		{"first fits", []core.Operation{{ID: "a", Cost: 2}, {ID: "b", Cost: 1}}, 3, 0},
-		{"later fits", []core.Operation{{ID: "a", Cost: 12}, {ID: "b", Cost: 5}, {ID: "c", Cost: 3}}, 8, 1},
-		{"exact capacity", []core.Operation{{ID: "a", Cost: 12}, {ID: "b", Cost: 8}}, 8, 1},
-		{"zero capacity", []core.Operation{{ID: "a", Cost: 1}}, 0, -1},
+		{"none fits", []domain.Operation{{ID: "a", Cost: 9}, {ID: "b", Cost: 8}}, 3, -1},
+		{"first fits", []domain.Operation{{ID: "a", Cost: 2}, {ID: "b", Cost: 1}}, 3, 0},
+		{"later fits", []domain.Operation{{ID: "a", Cost: 12}, {ID: "b", Cost: 5}, {ID: "c", Cost: 3}}, 8, 1},
+		{"exact capacity", []domain.Operation{{ID: "a", Cost: 12}, {ID: "b", Cost: 8}}, 8, 1},
+		{"zero capacity", []domain.Operation{{ID: "a", Cost: 1}}, 0, -1},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			before := append([]core.Operation(nil), test.pending...)
+			before := append([]domain.Operation(nil), test.pending...)
 			got := (CapacityFit{}).Next(test.pending, test.available)
 
 			if got != test.want {
@@ -91,7 +91,7 @@ func TestStarvationGuardBypassLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pending := []core.Operation{
+	pending := []domain.Operation{
 		{ID: "big", Cost: 8},
 		{ID: "small1", Cost: 1},
 		{ID: "small2", Cost: 2},
@@ -128,7 +128,7 @@ func TestStarvationGuardResetsOnHeadChangeAndEmptyQueue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pending := []core.Operation{{ID: "a", Cost: 9}, {ID: "b", Cost: 1}}
+	pending := []domain.Operation{{ID: "a", Cost: 9}, {ID: "b", Cost: 1}}
 	if got := starvation.Next(pending, 1); got != 1 {
 		t.Fatalf("initial lead = %d, want 1", got)
 	}
@@ -138,7 +138,7 @@ func TestStarvationGuardResetsOnHeadChangeAndEmptyQueue(t *testing.T) {
 	}
 
 	// When the ID of the first operation changes, another counter starts
-	pending = []core.Operation{{ID: "c", Cost: 9}, {ID: "d", Cost: 1}}
+	pending = []domain.Operation{{ID: "c", Cost: 9}, {ID: "d", Cost: 1}}
 	if got := starvation.Next(pending, 1); got != 1 {
 		t.Fatalf("counter after header change = %d, want 1", got)
 	}
@@ -158,7 +158,7 @@ func TestStarvationGuardNoCandidate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pending := []core.Operation{{ID: "a", Cost: 9}, {ID: "b", Cost: 4}}
+	pending := []domain.Operation{{ID: "a", Cost: 9}, {ID: "b", Cost: 4}}
 	if got := starvation.Next(pending, 1); got != -1 {
 		t.Fatalf("no candidate = %d, want -1", got)
 	}
@@ -175,7 +175,7 @@ func TestStarvationGuardConcurrentCalls(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	pending := []core.Operation{{ID: "a", Cost: 9}, {ID: "b", Cost: 1}}
+	pending := []domain.Operation{{ID: "a", Cost: 9}, {ID: "b", Cost: 1}}
 
 	const workers = 32
 	results := make(chan int, workers)

@@ -3,8 +3,8 @@ package admission
 import (
 	"errors"
 	"fmt"
-	"pondus-gateway/internal/core"
-	"pondus-gateway/internal/scheduler"
+	"pondus-gateway/internal/control/scheduler"
+	"pondus-gateway/internal/domain"
 	"strings"
 	"sync"
 	"testing"
@@ -12,7 +12,7 @@ import (
 
 type brokenSelector struct{ calls int }
 
-func (selector *brokenSelector) Next(pending []core.Operation, available uint64) int {
+func (selector *brokenSelector) Next(pending []domain.Operation, available uint64) int {
 	selector.calls++
 	if selector.calls == 1 {
 		return 1
@@ -20,8 +20,8 @@ func (selector *brokenSelector) Next(pending []core.Operation, available uint64)
 	return len(pending)
 }
 
-func testOperation(id string, cost uint64) core.Operation {
-	return core.Operation{
+func testOperation(id string, cost uint64) domain.Operation {
+	return domain.Operation{
 		ID:       id,
 		ClientID: "client-1",
 		Type:     "compute",
@@ -43,7 +43,7 @@ func assertSnapshot(t *testing.T, controller *Controller, wantActive int, wantQu
 func newSessionController(t *testing.T) *Controller {
 	t.Helper()
 
-	controller, err := New(core.Limits{
+	controller, err := New(domain.Limits{
 		MaxConcurrent: 1,
 		MaxCapacity:   1,
 		MaxQueueSize:  2,
@@ -57,7 +57,7 @@ func newSessionController(t *testing.T) *Controller {
 }
 
 func TestAdmission(t *testing.T) {
-	controller, err := New(core.Limits{
+	controller, err := New(domain.Limits{
 		MaxConcurrent: 2,
 		MaxCapacity:   10,
 		MaxQueueSize:  2,
@@ -117,7 +117,7 @@ func TestAdmission(t *testing.T) {
 }
 
 func TestConcurrentAdmission(t *testing.T) {
-	controller, err := New(core.Limits{
+	controller, err := New(domain.Limits{
 		MaxConcurrent: 5,
 		MaxCapacity:   5,
 		MaxQueueSize:  10,
@@ -160,7 +160,7 @@ func TestStarvationGuardAdmission(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	controller, err := NewWithSelector(core.Limits{
+	controller, err := NewWithSelector(domain.Limits{
 		MaxConcurrent: 4,
 		MaxCapacity:   10,
 		MaxQueueSize:  5,
@@ -184,7 +184,7 @@ func TestStarvationGuardAdmission(t *testing.T) {
 	}
 
 	for _, item := range operations {
-		operation := core.Operation{
+		operation := domain.Operation{
 			ID:       item.id,
 			ClientID: "client-1",
 			Type:     "compute",
@@ -246,7 +246,7 @@ func TestStarvationGuardAdmission(t *testing.T) {
 func TestSaturationAndConcurrentFinish(t *testing.T) {
 	const total = 50
 
-	controller, err := New(core.Limits{
+	controller, err := New(domain.Limits{
 		MaxConcurrent: 5,
 		MaxCapacity:   5,
 		MaxQueueSize:  total - 5,
@@ -298,7 +298,7 @@ func TestSaturationAndConcurrentFinish(t *testing.T) {
 	for len(ids) > 0 {
 		type result struct {
 			id       string
-			promoted []core.Operation
+			promoted []domain.Operation
 			err      error
 		}
 
@@ -368,7 +368,7 @@ func TestSaturationAndConcurrentFinish(t *testing.T) {
 }
 
 func TestFIFOHeadDoesNotFit(t *testing.T) {
-	controller, err := New(core.Limits{
+	controller, err := New(domain.Limits{
 		MaxConcurrent: 3,
 		MaxCapacity:   10,
 		MaxQueueSize:  3,
@@ -468,7 +468,7 @@ func TestCompareSchedulers(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			controller, err := NewWithSelector(
-				core.Limits{
+				domain.Limits{
 					MaxConcurrent: 4,
 					MaxCapacity:   10,
 					MaxQueueSize:  4,
@@ -494,7 +494,7 @@ func TestCompareSchedulers(t *testing.T) {
 			}
 
 			for _, request := range requests {
-				operation := core.Operation{
+				operation := domain.Operation{
 					ID:       request.id,
 					ClientID: "client-1",
 					Type:     "compute",
@@ -547,8 +547,8 @@ func TestCompareSchedulers(t *testing.T) {
 }
 
 func TestControllerConstruction(t *testing.T) {
-	valid := core.Limits{MaxConcurrent: 1, MaxCapacity: 3, MaxQueueSize: 1}
-	if _, err := New(core.Limits{}); err == nil {
+	valid := domain.Limits{MaxConcurrent: 1, MaxCapacity: 3, MaxQueueSize: 1}
+	if _, err := New(domain.Limits{}); err == nil {
 		t.Fatal("expected invalid limits")
 	}
 	if _, err := NewWithSelector(valid, nil); err == nil {
@@ -563,12 +563,12 @@ func TestControllerConstruction(t *testing.T) {
 }
 
 func TestControllerInvalidOperations(t *testing.T) {
-	controller, err := New(core.Limits{MaxConcurrent: 1, MaxCapacity: 3, MaxQueueSize: 2})
+	controller, err := New(domain.Limits{MaxConcurrent: 1, MaxCapacity: 3, MaxQueueSize: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	for _, operation := range []core.Operation{
+	for _, operation := range []domain.Operation{
 		{
 			ID:       "",
 			ClientID: "client",
@@ -591,7 +591,7 @@ func TestControllerInvalidOperations(t *testing.T) {
 
 func TestCancelPendingAndReuse(t *testing.T) {
 	controller, err := New(
-		core.Limits{
+		domain.Limits{
 			MaxConcurrent: 1,
 			MaxCapacity:   3,
 			MaxQueueSize:  3,
@@ -602,7 +602,7 @@ func TestCancelPendingAndReuse(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	submit := func(operation core.Operation, expected Decision) {
+	submit := func(operation domain.Operation, expected Decision) {
 		t.Helper()
 		got, err := controller.Submit(operation)
 		if err != nil || got != expected {
@@ -652,7 +652,7 @@ func TestCancelPendingAndReuse(t *testing.T) {
 func TestPromotionErrorPreservesProgress(t *testing.T) {
 	selector := &brokenSelector{}
 	controller, err := NewWithSelector(
-		core.Limits{
+		domain.Limits{
 			MaxConcurrent: 3,
 			MaxCapacity:   4,
 			MaxQueueSize:  3,
@@ -664,7 +664,7 @@ func TestPromotionErrorPreservesProgress(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, operation := range []core.Operation{testOperation("a", 4), testOperation("b", 3), testOperation("c", 1)} {
+	for _, operation := range []domain.Operation{testOperation("a", 4), testOperation("b", 3), testOperation("c", 1)} {
 		decision, err := controller.Submit(operation)
 		if err != nil || decision == Rejected {
 			t.Fatalf(
@@ -698,7 +698,7 @@ func TestSessionExclusiveMutationsAndRecovery(t *testing.T) {
 		t.Fatalf("second acquire: %v", err)
 	}
 
-	operation := core.Operation{
+	operation := domain.Operation{
 		ID:       "owned",
 		ClientID: "a",
 		Type:     "test",
@@ -711,7 +711,7 @@ func TestSessionExclusiveMutationsAndRecovery(t *testing.T) {
 		)
 	}
 
-	pending := core.Operation{
+	pending := domain.Operation{
 		ID:       "queued",
 		ClientID: "a",
 		Type:     "test",
@@ -724,7 +724,7 @@ func TestSessionExclusiveMutationsAndRecovery(t *testing.T) {
 		)
 	}
 
-	if _, err := controller.Submit(core.Operation{
+	if _, err := controller.Submit(domain.Operation{
 		ID:       "external",
 		ClientID: "x",
 		Type:     "test", Cost: 1,
@@ -796,7 +796,7 @@ func TestSessionPromotionAndStaleSession(t *testing.T) {
 	}
 
 	for _, id := range []string{"a", "b"} {
-		if _, err := session1.Submit(core.Operation{
+		if _, err := session1.Submit(domain.Operation{
 			ID:       id,
 			ClientID: "client",
 			Type:     "test", Cost: 1,
@@ -845,7 +845,7 @@ func TestSessionPromotionAndStaleSession(t *testing.T) {
 
 func TestAcquireRequiresEmptyController(t *testing.T) {
 	controller := newSessionController(t)
-	if _, err := controller.Submit(core.Operation{
+	if _, err := controller.Submit(domain.Operation{
 		ID:       "a",
 		ClientID: "x",
 		Type:     "test",
