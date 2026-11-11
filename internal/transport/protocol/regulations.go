@@ -28,6 +28,7 @@ var (
 	ErrMoreThanOneJSON  = errors.New("more than one JSON document was found")
 )
 
+// Operation represents an operation in the protocol's JSON format.
 type Operation struct {
 	ID       string `json:"id"`
 	ClientID string `json:"client_id"`
@@ -35,11 +36,14 @@ type Operation struct {
 	Cost     uint64 `json:"cost"`
 }
 
+// Request groups together the operations associated with a specific request.
 type Request struct {
 	RequestID  string      `json:"request_id"`
 	Operations []Operation `json:"operations"`
 }
 
+// Result represents the outcome of accepting and executing
+// an operation in the protocol's response format.
 type Result struct {
 	OperationID string  `json:"operation_id"`
 	Decision    string  `json:"decision"`
@@ -47,11 +51,16 @@ type Result struct {
 	Error       *string `json:"error"`
 }
 
+// ResponseError describes a general protocol error using
+// an identifiable code and a message.
 type ResponseError struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 }
 
+// Response represents the response to a protocol request,
+// distinguishing between successful responses and general
+// errors.
 type Response struct {
 	RequestID string         `json:"request_id"`
 	Status    string         `json:"status"`
@@ -59,6 +68,8 @@ type Response struct {
 	Error     *ResponseError `json:"error,omitempty"`
 }
 
+// Domain converts the protocol operation to its domain representation
+// without performing any validations.
 func (operation Operation) Domain() domain.Operation {
 	return domain.Operation{
 		ID:       operation.ID,
@@ -68,6 +79,10 @@ func (operation Operation) Domain() domain.Operation {
 	}
 }
 
+// Validate checks the validity of the request and its operations.
+//
+// It requires unique identifiers within the batch and distinguishes
+// between request errors and operation errors.
 func (request Request) Validate() error {
 	if strings.TrimSpace(request.RequestID) == "" {
 		return fmt.Errorf("%w: request_id empty", ErrInvalidRequest)
@@ -99,6 +114,9 @@ func (request Request) Validate() error {
 	return nil
 }
 
+// DecodeRequest decodes and validates a JSON request.
+//
+// It rejects unknown fields and additional JSON documents.
 func DecodeRequest(message []byte) (Request, error) {
 	var request Request
 
@@ -113,6 +131,9 @@ func DecodeRequest(message []byte) (Request, error) {
 	return request, nil
 }
 
+// DecodeResponse decodes and validates a JSON response.
+//
+// It rejects unknown fields and additional JSON documents.
 func DecodeResponse(message []byte) (Response, error) {
 	var response Response
 
@@ -127,6 +148,8 @@ func DecodeResponse(message []byte) (Response, error) {
 	return response, nil
 }
 
+// Validate checks for consistency between the response status
+// and its general error. It does not validate individual results.
 func (response Response) Validate() error {
 	switch response.Status {
 	case StatusCompleted:
@@ -148,6 +171,9 @@ func (response Response) Validate() error {
 	return nil
 }
 
+// EncodeRequest validates and writes a JSON request.
+//
+// It does not write the request if validation fails.
 func EncodeRequest(output io.Writer, request Request) error {
 	if err := request.Validate(); err != nil {
 		return err
@@ -155,10 +181,15 @@ func EncodeRequest(output io.Writer, request Request) error {
 	return json.NewEncoder(output).Encode(request)
 }
 
+// EncodeResponse writes a JSON response without validating it first.
 func EncodeResponse(output io.Writer, response Response) error {
 	return json.NewEncoder(output).Encode(response)
 }
 
+// decodeOne decodes a single JSON document into the specified
+// destination.
+//
+// It rejects unknown fields and additional JSON content.
 func decodeOne(message []byte, target any) error {
 	decoder := json.NewDecoder(bytes.NewReader(message))
 	decoder.DisallowUnknownFields()

@@ -13,6 +13,7 @@ import (
 	"time"
 )
 
+// main starts the TCP server
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -20,6 +21,11 @@ func main() {
 	}
 }
 
+// run configures and starts the TCP server based on the command-line
+// arguments, validating transport and execution limits.
+//
+// It keeps the service running until it receives an interrupt or
+// termination signal, at which point it requests an orderly shutdown.
 func run(args []string) error {
 	flags := flag.NewFlagSet("pondus-server", flag.ContinueOnError)
 

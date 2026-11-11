@@ -10,6 +10,7 @@ import (
 	"time"
 )
 
+// main starts the TCP client
 func main() {
 	if err := run(os.Args[1:], os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -17,6 +18,13 @@ func main() {
 	}
 }
 
+// run configures the TCP client based on the command-line
+// arguments, loads a JSON request, and sends it to the server.
+//
+// It sets a timeout for the communication and displays the results.
+//
+// It returns an error if the exchange fails or the server responds
+// with an error.
 func run(args []string, output io.Writer) error {
 	flags := flag.NewFlagSet("pondus-client", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)

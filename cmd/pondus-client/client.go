@@ -22,6 +22,9 @@ var (
 	ErrCode     = errors.New("error response without a code")
 )
 
+// loadRequest loads and validates a JSON request from a file.
+//
+// It rejects requests that exceed the maximum allowed size.
 func loadRequest(path string) (protocol.Request, error) {
 	file, err := os.Open(path)
 
@@ -48,6 +51,11 @@ func loadRequest(path string) (protocol.Request, error) {
 	return request, nil
 }
 
+// exchange sends a request to the TCP server and receives its response,
+// respecting cancellation and context timeouts.
+//
+// Limits the size of messages and verifies that identifiers match, except
+// in server busy responses without an ID.
 func exchange(ctx context.Context, address string, request protocol.Request) (protocol.Response, error) {
 	var message bytes.Buffer
 	if err := protocol.EncodeRequest(&message, request); err != nil {
@@ -119,6 +127,8 @@ func exchange(ctx context.Context, address string, request protocol.Request) (pr
 	return response, nil
 }
 
+// printResults displays the overall status of the request and the
+// individual results of the received operations.
 func printResults(output io.Writer, response protocol.Response) {
 	fmt.Fprintf(
 		output,

@@ -21,6 +21,8 @@ var (
 	ErrBatchRejected       = errors.New("batch initially rejected")
 )
 
+// Config defines the limits and scheduling strategy for the TCP service,
+// along with the duration of the simulated operations.
 type Config struct {
 	Limits        domain.Limits
 	Scheduler     string
@@ -28,11 +30,16 @@ type Config struct {
 	SleepDuration time.Duration
 }
 
+// The service processes batch execution requests.
+//
+// It allows only one batch to be processed at a time.
 type Service struct {
 	config Config
 	busy   chan struct{}
 }
 
+// Validate checks the service limits and the compatibility
+// of the parameters with the configured planning strategy.
 func (config Config) Validate() error {
 	if err := config.Limits.Validate(); err != nil {
 		return fmt.Errorf("limits: %w", err)
@@ -58,6 +65,8 @@ func (config Config) Validate() error {
 	return nil
 }
 
+// New creates a TCP service with validated settings
+// and initialized request exclusivity control.
 func New(config Config) (*Service, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
@@ -66,6 +75,13 @@ func New(config Config) (*Service, error) {
 	return &Service{config: config, busy: make(chan struct{}, 1)}, nil
 }
 
+// Handles, validates, and executes a batch of operations, returning
+// a protocol response with the results.
+//
+// Rejects the entire batch if any operation is incompatible or exceeds
+// the initial admission limits.
+//
+// Does not wait if the service is processing another batch.
 func (service *Service) Handle(ctx context.Context, request protocol.Request) protocol.Response {
 	if err := request.Validate(); err != nil {
 		return failure(request.RequestID, protocol.CodeInvalidRequest, "invalid request")
@@ -149,6 +165,8 @@ func (service *Service) Handle(ctx context.Context, request protocol.Request) pr
 	return response
 }
 
+// failure constructs an error response for the protocol
+// associated with the request identifier.
 func failure(id string, code string, message string) protocol.Response {
 	return protocol.Response{
 		RequestID: id,
@@ -160,6 +178,9 @@ func failure(id string, code string, message string) protocol.Response {
 	}
 }
 
+// validateAdmission checks whether the entire batch can be initially admitted
+// using a separate controller, without executing operations or simulating subsequent
+// capacity releases.
 func (service *Service) validateAdmission(operations []domain.Operation) error {
 	controller, err := admission.New(service.config.Limits)
 	if err != nil {
@@ -181,6 +202,8 @@ func (service *Service) validateAdmission(operations []domain.Operation) error {
 	return nil
 }
 
+// The selector builds the planning strategy configured
+// for the service, including starvation protection.
 func (service *Service) selector() (scheduler.Selector, error) {
 	switch service.config.Scheduler {
 	case "fifo":
