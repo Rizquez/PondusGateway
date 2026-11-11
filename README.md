@@ -12,7 +12,7 @@ The project is being developed according to three priorities, in this order:
 
 ## 🚀 Quick start
 
-### Direct Execution
+### Direct execution
 
 ```bash
 go run ./cmd/pondus -concurrency=4 -capacity=10 -operations=20 -duration=100ms
@@ -50,13 +50,13 @@ Then send a workload from another terminal:
 go run ./cmd/pondus-client -addr=127.0.0.1:9000 -file=clients/request.json
 ```
 
-The server applies the configured admission limits and scheduler, and the client receives the results of the submitted workload.
+The server applies the configured admission limits and scheduler and the client receives the results of the submitted workload.
 
 ### Makefile
 
 | Command | Description |
 | --- | --- |
-| `make test` | Runs the tests 20 times, the tests with the race detector 5 times, and `go vet`. |
+| `make test` | Runs the tests 20 times, the tests with the race detector 5 times and `go vet`. |
 | `make run-flags` | Direct execution with command-line flags. |
 | `make run-basic` | Runs the `clients/basic.yaml` scenario. |
 | `make run-multiple` | Runs the `clients/multiple.yaml` scenario. |
