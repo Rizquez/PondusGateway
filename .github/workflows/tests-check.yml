@@ -1,0 +1,39 @@
+name: Tests Check
+
+on:
+  pull_request:
+    branches:
+      - dev
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Tests
+        run: go test ./... -count=5
+
+      - name: Tests with race detector
+        run: go test -race ./... -count=2
+
+      - name: Vet
+        run: go vet ./...
