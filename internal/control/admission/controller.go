@@ -12,6 +12,7 @@ import (
 var (
 	ErrDuplicate          = errors.New("operation already admitted")
 	ErrNotActive          = errors.New("operation is not active")
+	ErrNotPending         = errors.New("operation is not pending")
 	ErrControllerBusy     = errors.New("controller is owned by a session")
 	ErrControllerNotEmpty = errors.New("controller has outstanding operations")
 	ErrSchedulerEmpty     = errors.New("scheduler cannot be nil")
@@ -297,4 +298,20 @@ func (controller *Controller) cancelPendingLocked() []domain.Operation {
 	controller.pending = nil
 
 	return cancelled
+}
+
+// cancelPendingByIDLocked removes a pending operation by its identifier
+// and releases its lock, without checking the controller's ownership.
+//
+// Requires the acquired mutex.
+func (controller *Controller) cancelPendingByIDLocked(id string) (domain.Operation, error) {
+	for index, operation := range controller.pending {
+		if operation.ID == id {
+			controller.removePending(index)
+			delete(controller.known, id)
+			return operation, nil
+		}
+	}
+
+	return domain.Operation{}, ErrNotPending
 }
