@@ -903,3 +903,150 @@ func TestConcurrentAcquireOnlyOneOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestSessionCancelPendingByID(t *testing.T) {
+	controller, err := New(
+		domain.Limits{
+			MaxConcurrent: 1,
+			MaxCapacity:   2,
+			MaxQueueSize:  4,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	owner, err := controller.Acquire()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	operation_a := domain.Operation{ID: "running", ClientID: "a", Type: "sleep", Cost: 2}
+	operation_b := domain.Operation{ID: "pending-b", ClientID: "b", Type: "sleep", Cost: 1}
+	operation_c := domain.Operation{ID: "pending-c", ClientID: "c", Type: "sleep", Cost: 1}
+	operation_d := domain.Operation{ID: "pending-d", ClientID: "d", Type: "sleep", Cost: 1}
+
+	for _, test := range []struct {
+		operation domain.Operation
+		want      Decision
+	}{
+		{operation_a, Started}, {operation_b, Queued}, {operation_c, Queued}, {operation_d, Queued},
+	} {
+		if got, err := owner.Submit(test.operation); err != nil || got != test.want {
+			t.Fatalf("Submit(%s) = %s, %v", test.operation.ID, got, err)
+		}
+	}
+
+	got, err := owner.CancelPendingByID(operation_c.ID)
+	if err != nil || got != operation_c {
+		t.Fatalf("CancelPendingByID() = %+v, %v", got, err)
+	}
+
+	if active, queued, used := owner.Snapshot(); active != 1 || queued != 2 || used != 2 {
+		t.Fatalf("snapshot=%d,%d,%d", active, queued, used)
+	}
+
+	if _, err := owner.CancelPendingByID(operation_a.ID); !errors.Is(err, ErrNotPending) {
+		t.Fatalf("active operation: %v", err)
+	}
+
+	if _, err := owner.CancelPendingByID("unknown"); !errors.Is(err, ErrNotPending) {
+		t.Fatalf("missing ID: %v", err)
+	}
+
+	if decision, err := owner.Submit(operation_c); err != nil || decision != Queued {
+		t.Fatalf("resubmit cancelled ID = %s, %v", decision, err)
+	}
+
+	promoted, err := owner.Finish(operation_a.ID)
+	if err != nil || len(promoted) != 1 || promoted[0].ID != operation_b.ID {
+		t.Fatalf("promoted=%+v, err=%v", promoted, err)
+	}
+
+	promoted, err = owner.Finish(operation_b.ID)
+	if err != nil || len(promoted) != 1 || promoted[0].ID != operation_d.ID {
+		t.Fatalf("promoted=%+v, err=%v", promoted, err)
+	}
+
+	promoted, err = owner.Finish(operation_d.ID)
+	if err != nil || len(promoted) != 1 || promoted[0].ID != operation_c.ID {
+		t.Fatalf("promoted=%+v, err=%v", promoted, err)
+	}
+
+	if _, err := owner.Finish(operation_c.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := owner.Release(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := owner.CancelPendingByID(operation_b.ID); !errors.Is(err, ErrSessionClosed) {
+		t.Fatalf("released session: %v", err)
+	}
+
+	var nilSession *Session
+	if _, err := nilSession.CancelPendingByID(operation_b.ID); !errors.Is(err, ErrSessionClosed) {
+		t.Fatalf("nil session: %v", err)
+	}
+}
+
+func TestSessionCancelPendingByIDKeepsOwnership(t *testing.T) {
+	controller, err := New(
+		domain.Limits{
+			MaxConcurrent: 1,
+			MaxCapacity:   1,
+			MaxQueueSize:  2,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	owner, err := controller.Acquire()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	operation := domain.Operation{
+		ID:       "one",
+		ClientID: "a",
+		Type:     "sleep",
+		Cost:     1,
+	}
+
+	pending := domain.Operation{
+		ID:       "two",
+		ClientID: "b",
+		Type:     "sleep",
+		Cost:     1,
+	}
+
+	if _, err := owner.Submit(operation); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := owner.Submit(pending); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := controller.Submit(pending); !errors.Is(err, ErrControllerBusy) {
+		t.Fatalf("controller access: %v", err)
+	}
+
+	if _, err := owner.CancelPendingByID(pending.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := owner.Release(); !errors.Is(err, ErrControllerNotEmpty) {
+		t.Fatalf("release with active reservation: %v", err)
+	}
+
+	if err := owner.FinishWithoutPromotion(operation.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := owner.Release(); err != nil {
+		t.Fatal(err)
+	}
+}

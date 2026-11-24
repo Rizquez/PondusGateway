@@ -1,0 +1,3 @@
+{"type":"submit","request_id":"request-001","operation":{"id":"operation-001","client_id":"client-a","type":"sleep","cost":2}}
+{"type":"submit","request_id":"request-002","operation":{"id":"operation-002","client_id":"client-a","type":"sleep","cost":1}}
+{"type":"submit","request_id":"request-003","operation":{"id":"operation-003","client_id":"client-a","type":"sleep","cost":3}}

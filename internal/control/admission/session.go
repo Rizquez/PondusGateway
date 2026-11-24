@@ -64,6 +64,25 @@ func (session *Session) CancelPending() ([]domain.Operation, error) {
 	return controller.cancelPendingLocked(), nil
 }
 
+// CancelPendingByID cancels a pending operation by its identifier.
+//
+// Requires that the session retain ownership of the controller.
+func (session *Session) CancelPendingByID(id string) (domain.Operation, error) {
+	if session == nil || session.controller == nil {
+		return domain.Operation{}, ErrSessionClosed
+	}
+
+	controller := session.controller
+	controller.mutex.Lock()
+	defer controller.mutex.Unlock()
+
+	if !session.validLocked() {
+		return domain.Operation{}, ErrSessionClosed
+	}
+
+	return controller.cancelPendingByIDLocked(id)
+}
+
 // Snapshot returns the current state of the controller, even if the session
 // is no longer owned. A null session returns zero values.
 func (session *Session) Snapshot() (active, queued int, used uint64) {
